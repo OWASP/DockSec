@@ -2,7 +2,7 @@
 pydantic==2.10.3
 langchain-core==0.3.26
 langchain==0.3.13
-langchain-openai==0.2.10
+langchain-openai==1.1.14
 langchain-anthropic==0.3.0
 langchain-google-genai==2.0.5
 langchain-ollama==0.2.0
