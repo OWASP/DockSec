@@ -21,4 +21,4 @@ fpdf2==2.8.1
 tenacity==9.0.0
 
 # Build tools
-setuptools>=65.0.0
+setuptools>=82.0.1
