@@ -21,7 +21,7 @@ setup(
     },
     python_requires=">=3.12",
     install_requires=[
-        "pydantic==2.10.3",
+        "pydantic==2.13.4",
         "langchain-core==0.3.26",
         "langchain==0.3.13",
         "langchain-openai==1.1.14",

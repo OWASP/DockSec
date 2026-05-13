@@ -1302,24 +1302,19 @@ class DockerSecurityScanner:
         """
         Escape HTML special characters in text.
         
+        Uses Python's built-in html.escape() for complete HTML5
+        entity handling, replacing the previous hand-rolled table.
+        
         Args:
             text: Text to escape
             
         Returns:
             HTML-escaped text
         """
+        import html
         if not text:
             return ""
-        
-        html_escape_table = {
-            "&": "&amp;",
-            '"': "&quot;",
-            "'": "&#x27;",
-            ">": "&gt;",
-            "<": "&lt;",
-        }
-        
-        return "".join(html_escape_table.get(c, c) for c in str(text))
+        return html.escape(str(text), quote=True)
 
 def main():
     """Main function to run the security scanner."""
