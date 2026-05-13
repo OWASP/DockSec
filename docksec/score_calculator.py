@@ -8,8 +8,8 @@ It uses LLM-based analysis to provide comprehensive security scoring.
 import logging
 import re
 from typing import Dict
-from config import docker_score_prompt
-from utils import ScoreResponse, get_llm, get_custom_logger
+from docksec.config import docker_score_prompt
+from docksec.utils import ScoreResponse, get_llm, get_custom_logger
 
 # Initialize logger
 logger = get_custom_logger(__name__)

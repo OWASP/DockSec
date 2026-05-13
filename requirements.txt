@@ -1,5 +1,5 @@
 # Core dependencies - pinned to specific versions for fast, reliable installs
-pydantic==2.10.3
+pydantic==2.13.4
 langchain-core==0.3.26
 langchain==0.3.13
 langchain-openai==0.2.10

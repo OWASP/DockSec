@@ -1,7 +1,7 @@
 include LICENSE
 include README.md
-include *.html
 include requirements.txt
 include .env.example
-recursive-include testfiles *
+recursive-include docksec/templates *.html
+recursive-include tests *
 global-exclude *.py[cod] __pycache__ *.so .DS_Store

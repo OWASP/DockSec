@@ -30,7 +30,7 @@ try:
     OLLAMA_AVAILABLE = True
 except ImportError:
     OLLAMA_AVAILABLE = False
-from config import (
+from docksec.config import (
     BASE_DIR,
     OPENAI_API_KEY
 )
@@ -153,7 +153,7 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
         - Uses exponential backoff: 2s, 4s, 8s
         - Handles rate limiting automatically
     """
-    from config_manager import get_config
+    from docksec.config_manager import get_config
     
     try:
         config = get_config()

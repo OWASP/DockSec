@@ -1,18 +1,17 @@
-from setuptools import setup
-import os
-import glob
+from setuptools import setup, find_packages
+
 setup(
     name="docksec",
-    version="2026.4.16",
+    version="2026.5.6",
     description="AI-Powered Docker Security Analyzer",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="Advait Patel",
     url="https://github.com/advaitpatel/DockSec",
-    py_modules=["docksec", "main", "docker_scanner", "utils", "config", "config_manager", "report_generator", "score_calculator", "setup_external_tools"],
+    packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "docksec=docksec:main",
+            "docksec=docksec.cli:main",
         ],
     },
     project_urls={
@@ -22,7 +21,7 @@ setup(
     },
     python_requires=">=3.12",
     install_requires=[
-        "pydantic==2.10.3",
+        "pydantic==2.13.4",
         "langchain-core==0.3.26",
         "langchain==0.3.13",
         "langchain-openai==0.2.10",
@@ -44,8 +43,7 @@ setup(
         "Operating System :: OS Independent",
     ],
     include_package_data=True,
-    # Ensure all Python files and templates are included in the distribution
     package_data={
-        '': ['*.py', 'templates/*.html', 'templates/**/*.html'],
+        'docksec': ['templates/*.html'],
     },
 )

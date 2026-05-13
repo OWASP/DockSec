@@ -8,10 +8,10 @@ It's people like you that make DockSec such a great tool. We welcome contributio
 
 - [Code of Conduct](#code-of-conduct)
 - [How Can I Contribute?](#how-can-i-contribute)
-  - [Reporting Bugs](#reporting-bugs)
-  - [Suggesting Features](#suggesting-features)
-  - [Your First Code Contribution](#your-first-code-contribution)
-  - [Pull Requests](#pull-requests)
+- [Reporting Bugs](#reporting-bugs)
+- [Suggesting Features](#suggesting-features)
+- [Your First Code Contribution](#your-first-code-contribution)
+- [Pull Requests](#pull-requests)
 - [Development Setup](#development-setup)
 - [Code Style Guidelines](#code-style-guidelines)
 - [Testing](#testing)
@@ -112,7 +112,7 @@ Unsure where to begin? Look for issues labeled:
 
 5. **Install external tools** (optional, for full testing):
    ```bash
-   python setup_external_tools.py
+   python -m docksec.setup_external_tools
    ```
 
 6. **Set up environment variables**:
@@ -162,42 +162,6 @@ flake8 .
 mypy .
 ```
 
-### Code Standards
-
-1. **Follow PEP 8** style guide
-2. **Use type hints** for all functions
-3. **Write docstrings** for all public functions and classes
-4. **Keep functions small** and focused
-5. **Add comments** for complex logic
-6. **Use meaningful variable names**
-
-### Example
-
-```python
-from typing import List, Optional
-
-def analyze_dockerfile(
-    dockerfile_path: str,
-    severity_levels: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """
-    Analyze a Dockerfile for security vulnerabilities.
-    
-    Args:
-        dockerfile_path: Path to the Dockerfile to analyze
-        severity_levels: Optional list of severity levels to filter
-        
-    Returns:
-        Dictionary containing analysis results
-        
-    Raises:
-        FileNotFoundError: If Dockerfile doesn't exist
-        ValueError: If Dockerfile path is invalid
-    """
-    # Implementation here
-    pass
-```
-
 ## 🧪 Testing
 
 We maintain high test coverage to ensure code quality.
@@ -218,33 +182,6 @@ pytest tests/test_docker_scanner.py
 pytest tests/test_docker_scanner.py::test_scan_dockerfile
 ```
 
-### Writing Tests
-
-1. **Create test files** in the `tests/` directory
-2. **Name test functions** starting with `test_`
-3. **Use descriptive test names** that explain what's being tested
-4. **Test edge cases** and error conditions
-5. **Use fixtures** for common setup
-6. **Mock external dependencies** (API calls, file I/O)
-
-### Example Test
-
-```python
-import pytest
-from docksec import analyze_dockerfile
-
-def test_analyze_dockerfile_success():
-    """Test successful Dockerfile analysis."""
-    result = analyze_dockerfile("tests/fixtures/good_dockerfile")
-    assert result["score"] > 80
-    assert "vulnerabilities" in result
-
-def test_analyze_dockerfile_missing_file():
-    """Test error handling for missing Dockerfile."""
-    with pytest.raises(FileNotFoundError):
-        analyze_dockerfile("nonexistent/Dockerfile")
-```
-
 ## 📚 Documentation
 
 Good documentation is crucial! When contributing:
@@ -262,33 +199,29 @@ Good documentation is crucial! When contributing:
 - Update **CLI help text** if you change commands
 - Add entries to **CHANGELOG.md**
 
-### Documentation Style
-
-- Use **clear, simple language**
-- Provide **code examples**
-- Include **expected output**
-- Add **troubleshooting tips** if needed
-
 ## 🏗️ Project Structure
 
 ```
 DockSec/
 ├── .github/              # GitHub templates and workflows
-├── templates/            # Report templates
+├── docksec/              # Main package directory
+│   ├── templates/        # Report templates
+│   ├── cli.py            # Main CLI entry point
+│   ├── docker_scanner.py # Scanning engine
+│   ├── utils.py          # Utility functions
+│   ├── config.py         # Configuration management
+│   ├── config_manager.py # Advanced configuration manager
+│   ├── report_generator.py # Report generation
+│   ├── score_calculator.py # Security scoring
+│   └── setup_external_tools.py # Tool installation helper
 ├── tests/                # Test files
-├── docksec.py           # Main CLI entry point
-├── main.py              # AI analysis module
-├── docker_scanner.py    # Scanning engine
-├── utils.py             # Utility functions
-├── config.py            # Configuration management
-├── report_generator.py  # Report generation
-├── score_calculator.py  # Security scoring
-├── requirements.txt     # Dependencies
-├── setup.py             # Package configuration
-├── README.md            # Main documentation
-├── CONTRIBUTING.md      # This file
-├── CHANGELOG.md         # Version history
-└── SECURITY.md          # Security policy
+├── requirements.txt      # Dependencies
+├── setup.py              # Package configuration
+├── pyproject.toml        # Build system configuration
+├── README.md             # Main documentation
+├── CONTRIBUTING.md       # This file
+├── CHANGELOG.md          # Version history
+└── SECURITY.md           # Security policy
 ```
 
 ## 🔄 Development Workflow

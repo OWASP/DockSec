@@ -32,8 +32,8 @@ class TestDockerSecurityScanner(unittest.TestCase):
             f.write(content)
         return self.test_dockerfile
     
-    @patch('docker_scanner.subprocess.run')
-    @patch('docker_scanner.get_llm')
+    @patch('docksec.docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.get_llm')
     def test_init_with_valid_inputs(self, mock_llm, mock_subprocess):
         """Test initialization with valid inputs."""
         # Mock subprocess calls for tool checking and docker image inspect
@@ -44,7 +44,7 @@ class TestDockerSecurityScanner(unittest.TestCase):
         
         dockerfile = self.create_test_dockerfile()
         
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         scanner = DockerSecurityScanner(dockerfile, "test:latest")
         # Compare resolved paths — on macOS tempfile returns /var/... but
@@ -55,7 +55,7 @@ class TestDockerSecurityScanner(unittest.TestCase):
     
     def test_validate_image_name(self):
         """Test image name validation."""
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         # Valid image names
         valid_names = ["nginx:latest", "myimage:v1.0", "registry/image:tag"]
@@ -71,7 +71,7 @@ class TestDockerSecurityScanner(unittest.TestCase):
     
     def test_validate_file_path(self):
         """Test file path validation."""
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         # Path traversal attempts should be rejected
         with self.assertRaises(ValueError):
@@ -84,7 +84,7 @@ class TestDockerSecurityScanner(unittest.TestCase):
     
     def test_validate_severity(self):
         """Test severity validation."""
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         # Valid severities
         valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]
@@ -101,26 +101,26 @@ class TestDockerSecurityScanner(unittest.TestCase):
         self.assertIn("CRITICAL", result)
         self.assertIn("HIGH", result)
     
-    @patch('docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.subprocess.run')
     def test_check_tools_missing(self, mock_subprocess):
         """Test tool checking with missing tools."""
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         # Mock FileNotFoundError for missing tool
         mock_subprocess.side_effect = FileNotFoundError()
         
         dockerfile = self.create_test_dockerfile()
         
-        with patch('docker_scanner.get_llm'):
+        with patch('docksec.docker_scanner.get_llm'):
             scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
             scanner.required_tools = ['docker', 'trivy']
             missing = scanner._check_tools()
             self.assertEqual(missing, ['docker', 'trivy'])
     
-    @patch('docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.subprocess.run')
     def test_check_tools_present(self, mock_subprocess):
         """Test tool checking with all tools present."""
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         # Mock successful tool check
         mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
@@ -132,7 +132,7 @@ class TestDockerSecurityScanner(unittest.TestCase):
     
     def test_get_tool_installation_instructions(self):
         """Test installation instructions for tools."""
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
         

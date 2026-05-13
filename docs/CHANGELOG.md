@@ -5,6 +5,27 @@ All notable changes to DockSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.5.6] - 2026-05-06
+
+### Changed
+- **Major Structural Overhaul**: Restructured the project from a flat layout to a proper Python package structure.
+  - Core logic moved to `docksec/` directory.
+  - CLI entry point moved to `docksec/cli.py`.
+  - Templates moved to `docksec/templates/`.
+  - Consolidation of redundant files (`main.py` removed).
+- **Packaging Improvements**:
+  - Updated `setup.py` and `pyproject.toml` for better distribution.
+  - Improved `MANIFEST.in` to include all necessary package data.
+- **Documentation**:
+  - Updated `README.md` and `CONTRIBUTING.md` to reflect the new structure.
+  - Improved project structure visualization in documentation.
+
+### Fixed
+- Internal import paths updated to use absolute package imports.
+- Metadata artifacts (`*:Zone.Identifier`) removed from the repository.
+
+---
+
 ## [2026.2.23] - 2026-02-23
 
 ### Added
