@@ -8,7 +8,7 @@ for accessing configuration values throughout the application.
 
 import os
 import logging
-from typing import Optional
+from typing import Optional, Any, Dict
 from dataclasses import dataclass, field
 
 # Set up logger

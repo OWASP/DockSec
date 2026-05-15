@@ -1,7 +1,8 @@
 import logging
 import sys
 import os
-from typing import Union
+import time
+from typing import Union, Any, List, Optional
 
 # Import OpenAI (required)
 try:
@@ -43,7 +44,6 @@ except ImportError:
             "Either 'pydantic' or 'langchain-core' must be installed. "
             "Install with: pip install pydantic langchain-core"
         )
-from typing import List, Optional
 from tqdm import tqdm
 from colorama import Fore, Style, init
 from rich.console import Console

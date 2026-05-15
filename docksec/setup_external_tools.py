@@ -3,6 +3,7 @@ import subprocess
 import os
 import platform
 import shutil
+import zipfile
 from pathlib import Path
 import urllib.request
 import stat
@@ -128,7 +129,8 @@ def install_trivy():
             zip_path.unlink()
 
             # Add to PATH if not already there
-            if str(install_dir) not in os.environ.get("PATH", ""):
+            user_path = os.environ.get("PATH", "")
+            if str(install_dir) not in user_path:
                 # Using setx to permanently add to PATH
                 subprocess.run(["setx", "PATH", f"{user_path};{install_dir}"], shell=True)
                 print("Added Trivy to PATH. Please restart your terminal for the changes to take effect.")
