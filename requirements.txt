@@ -1,5 +1,5 @@
 # Core dependencies - pinned to specific versions for fast, reliable installs
-pydantic==2.10.3
+pydantic==2.13.4
 langchain-core==0.3.26
 langchain==0.3.13
 langchain-openai==0.2.10
@@ -7,12 +7,12 @@ langchain-anthropic==0.3.0
 langchain-google-genai==2.0.5
 langchain-ollama==0.2.0
 python-dotenv==1.0.1
-pandas==2.2.3
+pandas==3.0.2
 
 # UI and progress
 tqdm==4.67.1
 colorama==0.4.6
-rich==13.9.4
+rich==15.0.0
 
 # PDF generation
 fpdf2==2.8.1
@@ -21,4 +21,4 @@ fpdf2==2.8.1
 tenacity==9.1.4
 
 # Build tools
-setuptools>=65.0.0
+setuptools>=82.0.1

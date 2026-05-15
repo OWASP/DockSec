@@ -26,9 +26,9 @@ class TestIntegration(unittest.TestCase):
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
     
-    @patch('docker_scanner.subprocess.run')
-    @patch('docker_scanner.get_llm')
-    @patch('config.get_openai_api_key')
+    @patch('docksec.docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.get_llm')
+    @patch('docksec.config.get_openai_api_key')
     def test_full_scan_workflow(self, mock_api_key, mock_llm, mock_subprocess):
         """Test complete scanning workflow."""
         # Mock API key
@@ -49,7 +49,7 @@ class TestIntegration(unittest.TestCase):
         
         mock_subprocess.side_effect = subprocess_side_effect
         
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         scanner = DockerSecurityScanner(self.test_dockerfile, "test:latest")
         
@@ -60,9 +60,9 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(scanner.dockerfile_path, str(Path(self.test_dockerfile).resolve()))
         self.assertEqual(scanner.image_name, "test:latest")
     
-    @patch('docker_scanner.subprocess.run')
-    @patch('docker_scanner.get_llm')
-    @patch('config.get_openai_api_key')
+    @patch('docksec.docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.get_llm')
+    @patch('docksec.config.get_openai_api_key')
     def test_image_only_scan(self, mock_api_key, mock_llm, mock_subprocess):
         """Test image-only scanning without Dockerfile."""
         # Mock API key
@@ -83,7 +83,7 @@ class TestIntegration(unittest.TestCase):
         
         mock_subprocess.side_effect = subprocess_side_effect
         
-        from docker_scanner import DockerSecurityScanner
+        from docksec.docker_scanner import DockerSecurityScanner
         
         # Should work without Dockerfile
         scanner = DockerSecurityScanner(None, "test:latest")

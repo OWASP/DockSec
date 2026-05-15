@@ -14,7 +14,7 @@ class TestUtils(unittest.TestCase):
     
     def test_get_custom_logger(self):
         """Test logger creation."""
-        from utils import get_custom_logger
+        from docksec.utils import get_custom_logger
         
         logger = get_custom_logger('TestLogger')
         self.assertEqual(logger.name, 'TestLogger')
@@ -22,7 +22,7 @@ class TestUtils(unittest.TestCase):
     
     def test_load_docker_file(self):
         """Test Dockerfile loading."""
-        from utils import load_docker_file
+        from docksec.utils import load_docker_file
         
         # Create temporary Dockerfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.dockerfile', delete=False) as f:
@@ -38,16 +38,16 @@ class TestUtils(unittest.TestCase):
     
     def test_load_docker_file_not_found(self):
         """Test Dockerfile loading when file doesn't exist."""
-        from utils import load_docker_file
+        from docksec.utils import load_docker_file
         
         result = load_docker_file("/nonexistent/path/Dockerfile")
         self.assertIsNone(result)
     
-    @patch('utils.ChatOpenAI')
-    @patch('config_manager.get_config')
+    @patch('docksec.utils.ChatOpenAI')
+    @patch('docksec.config_manager.get_config')
     def test_get_llm(self, mock_get_config, mock_chatopenai):
         """Test LLM initialization with a mocked config and mocked ChatOpenAI."""
-        from utils import get_llm
+        from docksec.utils import get_llm
 
         mock_config = Mock()
         mock_config.llm_provider = "openai"
@@ -66,10 +66,10 @@ class TestUtils(unittest.TestCase):
         mock_chatopenai.assert_called_once()
         self.assertIsNotNone(llm)
 
-    @patch('config_manager.get_config')
+    @patch('docksec.config_manager.get_config')
     def test_get_llm_no_api_key(self, mock_get_config):
         """Test LLM initialization raises EnvironmentError when API key is missing."""
-        from utils import get_llm
+        from docksec.utils import get_llm
 
         mock_config = Mock()
         mock_config.llm_provider = "openai"

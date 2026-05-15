@@ -21,8 +21,8 @@ from datetime import datetime
 from fpdf import FPDF
 from pathlib import Path
 
-from config import RESULTS_DIR, html_template
-from utils import get_custom_logger
+from docksec.config import RESULTS_DIR, html_template
+from docksec.utils import get_custom_logger
 
 # Initialize logger
 logger = get_custom_logger(__name__)
@@ -458,24 +458,19 @@ class ReportGenerator:
         """
         Escape HTML special characters in text.
         
+        Uses Python's built-in html.escape() for complete HTML5
+        entity handling, replacing the previous hand-rolled table.
+        
         Args:
             text: Text to escape
             
         Returns:
             HTML-escaped text
         """
+        import html
         if not text:
             return ""
-        
-        html_escape_table = {
-            "&": "&amp;",
-            '"': "&quot;",
-            "'": "&#x27;",
-            ">": "&gt;",
-            "<": "&lt;",
-        }
-        
-        return "".join(html_escape_table.get(c, c) for c in str(text))
+        return html.escape(str(text), quote=True)
     
     def _count_by_severity(self, vulnerabilities: List[Dict]) -> Dict[str, int]:
         """

@@ -10,7 +10,7 @@ class TestConfig(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_get_openai_api_key_missing(self):
         """Test API key retrieval when not set."""
-        from config import get_openai_api_key
+        from docksec.config import get_openai_api_key
         
         with self.assertRaises(EnvironmentError):
             get_openai_api_key()
@@ -18,14 +18,14 @@ class TestConfig(unittest.TestCase):
     @patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key-123'})
     def test_get_openai_api_key_present(self):
         """Test API key retrieval when set."""
-        from config import get_openai_api_key
+        from docksec.config import get_openai_api_key
         
         api_key = get_openai_api_key()
         self.assertEqual(api_key, 'test-key-123')
     
     def test_prompt_templates_exist(self):
         """Test that prompt templates are defined."""
-        from config import docker_agent_template, docker_score_template
+        from docksec.config import docker_agent_template, docker_score_template
         
         self.assertIsNotNone(docker_agent_template)
         self.assertIsNotNone(docker_score_template)
