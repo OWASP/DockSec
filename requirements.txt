@@ -18,7 +18,7 @@ rich==15.0.0
 fpdf2==2.8.1
 
 # Retry logic
-tenacity==9.0.0
+tenacity==9.1.4
 
 # Build tools
 setuptools>=82.0.1
