@@ -2,7 +2,7 @@ import logging
 import sys
 import os
 import time
-from typing import Union, Any, List, Optional
+from typing import Union, List, Optional
 
 # Import OpenAI (required)
 try:
