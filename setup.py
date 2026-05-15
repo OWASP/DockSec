@@ -26,7 +26,7 @@ setup(
     install_requires=[
         "pydantic==2.13.4",
         "langchain-core==0.3.26",
-        "langchain==0.3.13",
+        "langchain==0.3.30",
         "langchain-openai==0.2.10",
         "langchain-anthropic==0.3.0",
         "langchain-google-genai==2.0.5",
