@@ -1,10 +1,13 @@
 from setuptools import setup, find_packages
 
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setup(
     name="docksec",
     version="2026.5.6",
     description="AI-Powered Docker Security Analyzer",
-    long_description=open("README.md").read(),
+    long_description=long_description,
     long_description_content_type="text/markdown",
     author="Advait Patel",
     url="https://github.com/advaitpatel/DockSec",
@@ -28,12 +31,12 @@ setup(
         "langchain-anthropic==0.3.0",
         "langchain-google-genai==2.0.5",
         "langchain-ollama==0.2.0",
-        "python-dotenv==1.0.1",
+        "python-dotenv==1.2.2",
         "pandas==3.0.2",
-        "tqdm==4.67.1",
+        "tqdm==4.67.3",
         "colorama==0.4.6",
         "rich==15.0.0",
-        "fpdf2==2.8.1",
+        "fpdf2==2.8.7",
         "tenacity==9.1.4",
         "setuptools>=65.0.0",
     ],

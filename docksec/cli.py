@@ -3,7 +3,7 @@
 import sys
 import os
 import argparse
-from typing import NoReturn, Optional
+from typing import Optional
 
 def get_version() -> str:
     """Return the installed package version.
@@ -21,7 +21,7 @@ def get_version() -> str:
 
     try:
         import re
-        setup_path = os.path.join(os.path.dirname(__file__), 'setup.py')
+        setup_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'setup.py')
         with open(setup_path, 'r') as f:
             match = re.search(r'version="([^"]+)"', f.read())
             if match:

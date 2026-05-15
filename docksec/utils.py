@@ -31,8 +31,7 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 from docksec.config import (
-    BASE_DIR,
-    OPENAI_API_KEY
+    BASE_DIR
 )
 try:
     from pydantic import BaseModel, Field
@@ -44,7 +43,7 @@ except ImportError:
             "Either 'pydantic' or 'langchain-core' must be installed. "
             "Install with: pip install pydantic langchain-core"
         )
-from typing import List, Optional, Any
+from typing import List, Optional
 import time
 from tqdm import tqdm
 from colorama import Fore, Style, init

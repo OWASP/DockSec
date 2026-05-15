@@ -2,14 +2,12 @@ import os
 import json
 import subprocess
 import csv
-import pandas as pd
 import logging
 from typing import List, Tuple, Dict, Optional
 from datetime import datetime
 from fpdf import FPDF
 import sys
 import re
-import shlex
 from pathlib import Path
 from docksec.config import RESULTS_DIR
 from docksec.config import docker_score_prompt
@@ -1057,12 +1055,6 @@ class DockerSecurityScanner:
         template_path = os.path.join(os.path.dirname(__file__), 'report_template.html')
 
         try:
-            # # Read the HTML template
-            # if not os.path.exists(template_path):
-            #     raise FileNotFoundError(f"HTML template not found at {template_path}")
-            #
-            # with open(template_path, 'r', encoding='utf-8') as f:
-            #     html_template = f.read()
             from docksec.config import html_template
             
             # Prepare template variables
