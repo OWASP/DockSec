@@ -47,8 +47,30 @@ def main() -> None:
                        help='LLM provider to use (default: openai, can also set LLM_PROVIDER env var)')
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-3-5-sonnet-20241022, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
+    parser.add_argument(
+        "-v", "--verbose", 
+        action="store_true",
+        help="Show detailed scan progress and tool output"
+    )
+    parser.add_argument(
+        "--debug", 
+        action="store_true",
+        help="Show debug-level output including raw tool outputs"
+    )
+    parser.add_argument(
+        "--log-file", 
+        metavar="PATH",
+        help="Write logs to a file in addition to stdout"
+    )
     
     args = parser.parse_args()
+    
+    from docksec.utils import configure_logging
+    configure_logging(
+        verbose=args.verbose,
+        debug=args.debug,
+        log_file=args.log_file
+    )
     
     # Set provider and model from CLI args if provided (overrides env vars)
     if args.provider:

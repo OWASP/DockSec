@@ -5,13 +5,14 @@ This module handles the calculation of security scores based on scan results.
 It uses LLM-based analysis to provide comprehensive security scoring.
 """
 
+import logging
 from typing import Dict
 from docksec.config import docker_score_prompt
 from docksec.enums import Severity
-from docksec.utils import ScoreResponse, get_llm, get_custom_logger
+from docksec.utils import ScoreResponse, get_llm
 
 # Initialize logger
-logger = get_custom_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class SecurityScoreCalculator:
@@ -66,28 +67,27 @@ class SecurityScoreCalculator:
             score_response = self.score_chain.invoke({"results": results})
             score = score_response.score
             
-            logger.info(f"Security score calculated: {score}")
-            print(f"Security Score: {score}/100")
+            logger.info("Security score calculated: %s", score)
+            logger.info("Security Score: %s/100", score)
             
             # Provide contextual feedback based on score
             if score >= 90:
-                print("[EXCELLENT] Excellent security posture!")
+                logger.info("[EXCELLENT] Excellent security posture!")
             elif score >= 70:
-                print("[GOOD] Good security, but some improvements recommended")
+                logger.info("[GOOD] Good security, but some improvements recommended")
             elif score >= 50:
-                print("[FAIR] Fair security - multiple issues need attention")
+                logger.info("[FAIR] Fair security - multiple issues need attention")
             else:
-                print("[POOR] Poor security - immediate action required")
+                logger.info("[POOR] Poor security - immediate action required")
             
             return score
             
         except Exception as e:
-            logger.error(f"Error calculating security score: {e}", exc_info=True)
-            print(f"\n[ERROR] Error calculating security score: {e}")
-            print("\nTroubleshooting:")
-            print("  1. Check your OpenAI API key and credits")
-            print("  2. Verify network connectivity")
-            print("  3. Review scan results format")
+            logger.error("Error calculating security score: %s", e, exc_info=True)
+            logger.error("Troubleshooting:")
+            logger.error("  1. Check your OpenAI API key and credits")
+            logger.error("  2. Verify network connectivity")
+            logger.error("  3. Review scan results format")
             # Return a default score in case of error
             logger.warning("Returning default score of 0 due to calculation error")
             return 0.0
