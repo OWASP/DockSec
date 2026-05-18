@@ -63,6 +63,24 @@ from openai import (
     APITimeoutError
 )
 
+def configure_logging(
+    verbose: bool = False, 
+    debug: bool = False, 
+    log_file: str = None
+):
+    level = logging.DEBUG if debug else (
+        logging.INFO if verbose else logging.WARNING
+    )
+    handlers = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file))
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+
 def get_custom_logger(name: str = 'Docksec'):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)

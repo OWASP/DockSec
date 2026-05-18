@@ -22,10 +22,9 @@ from typing import Dict, List, Optional
 from fpdf import FPDF
 
 from docksec.config import RESULTS_DIR, html_template
-from docksec.utils import get_custom_logger
 
 # Initialize logger
-logger = get_custom_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ReportGenerator:
@@ -110,11 +109,11 @@ class ReportGenerator:
             with open(output_file, "w") as f:
                 json.dump(report_data, f, indent=4)
             logger.info(f"JSON report saved successfully")
-            print(f"[SUCCESS] JSON report saved to {output_file}")
+            logger.info("JSON report saved to %s", output_file)
             return output_file
         except Exception as e:
-            logger.error(f"Error saving JSON report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving JSON report: {e}")
+            logger.error("Error saving JSON report: %s", e, exc_info=True)
+            logger.error("Error saving JSON report: %s", e)
             return ""
 
     def generate_csv_report(self, results: Dict) -> str:
@@ -135,8 +134,8 @@ class ReportGenerator:
             logger.warning(
                 "No vulnerability data to save to CSV, creating header-only file"
             )
-            print(
-                "[WARNING] No vulnerability data to save to CSV, creating header-only file"
+            logger.warning(
+                "No vulnerability data to save to CSV, creating header-only file"
             )
 
         try:
@@ -166,12 +165,12 @@ class ReportGenerator:
             logger.info(
                 f"CSV report saved successfully with {len(vulnerabilities)} vulnerabilities"
             )
-            print(f"[SUCCESS] CSV report saved to {output_file}")
+            logger.info("CSV report saved to %s", output_file)
             return output_file
 
         except Exception as e:
-            logger.error(f"Error saving CSV report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving CSV report: {e}")
+            logger.error("Error saving CSV report: %s", e, exc_info=True)
+            logger.error("Error saving CSV report: %s", e)
             return ""
 
     def generate_pdf_report(self, results: Dict) -> str:
@@ -322,12 +321,12 @@ class ReportGenerator:
 
             pdf.output(output_file)
             logger.info(f"PDF report saved successfully")
-            print(f"[SUCCESS] PDF report saved to {output_file}")
+            logger.info("PDF report saved to %s", output_file)
             return output_file
 
         except Exception as e:
-            logger.error(f"Error saving PDF report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving PDF report: {e}")
+            logger.error("Error saving PDF report: %s", e, exc_info=True)
+            logger.error("Error saving PDF report: %s", e)
             return ""
 
     def generate_html_report(self, results: Dict) -> str:
@@ -356,12 +355,12 @@ class ReportGenerator:
                 f.write(html_content)
 
             logger.info(f"HTML report saved successfully")
-            print(f"[SUCCESS] HTML report saved to {output_file}")
+            logger.info("HTML report saved to %s", output_file)
             return output_file
 
         except Exception as e:
-            logger.error(f"Error saving HTML report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving HTML report: {e}")
+            logger.error("Error saving HTML report: %s", e, exc_info=True)
+            logger.error("Error saving HTML report: %s", e)
             return ""
 
     def _prepare_html_template_vars(self, results: Dict) -> Dict[str, str]:
@@ -571,7 +570,7 @@ class ReportGenerator:
         from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
         logger.info("Generating all report formats")
-        print("\n=== Generating Reports ===")
+        logger.info("Generating Reports")
 
         report_paths = {"json": "", "csv": "", "pdf": "", "html": ""}
 
@@ -609,6 +608,6 @@ class ReportGenerator:
                 report_paths["html"] = html_path
             progress.update(html_task, advance=1)
 
-        print("\n[SUCCESS] All reports generated successfully!")
+        logger.info("All reports generated successfully!")
         logger.info(f"All reports generated: {report_paths}")
         return report_paths

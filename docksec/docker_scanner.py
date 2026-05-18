@@ -11,10 +11,10 @@ import re
 from pathlib import Path
 from docksec.config import RESULTS_DIR, docker_score_prompt
 from docksec.enums import Severity
-from docksec.utils import ScoreResponse, get_llm, print_section, get_custom_logger
+from docksec.utils import ScoreResponse, get_llm, print_section
 
 # Initialize logger
-logger = get_custom_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class DockerSecurityScanner:
     @staticmethod
@@ -197,7 +197,7 @@ class DockerSecurityScanner:
         # Validate severity input
         severity = self._validate_severity(severity)
         logger.info(f"Starting image-only scan for {self.image_name}")
-        print(f"\n=== Starting image-only scan for {self.image_name} ===")
+        logger.info("Starting image-only scan for %s", self.image_name)
         
         results = {
             'dockerfile_scan': {
@@ -227,13 +227,13 @@ class DockerSecurityScanner:
             results['json_data'] = json_data
 
         # Print final summary
-        print("\n=== Image-Only Scan Summary ===")
+        logger.info("Image-Only Scan Summary")
         if image_success and not json_data:
-            print("Image scan completed successfully with no vulnerabilities found.")
+            logger.info("Image scan completed successfully with no vulnerabilities found.")
         elif json_data:
-            print(f"Image scan completed. Found {len(json_data)} vulnerabilities.")
+            logger.info("Image scan completed. Found %d vulnerabilities.", len(json_data))
         else:
-            print("Image scan encountered issues. Please review the results above.")
+            logger.warning("Image scan encountered issues. Please review the results above.")
 
         return results 
           
@@ -290,7 +290,7 @@ class DockerSecurityScanner:
                 - Optional[str]: Output from the scan or None if successful
         """
         logger.info(f"Starting Dockerfile scan with Hadolint: {self.dockerfile_path}")
-        print("\n=== Starting Dockerfile scan with Hadolint ===")
+        logger.info("Starting Dockerfile scan with Hadolint")
         try:
             result = subprocess.run(
                 ['hadolint', self.dockerfile_path],
@@ -303,45 +303,44 @@ class DockerSecurityScanner:
             if result.returncode != 0:
                 output = result.stdout if result.stdout else result.stderr
                 logger.warning(f"Hadolint found issues in {self.dockerfile_path}")
-                print("[WARNING] Dockerfile linting issues found:")
-                print(output)
-                print("\n[TIP] Run 'hadolint --help' to learn about specific rules")
-                print("   You can ignore specific rules with: hadolint --ignore DL3000 Dockerfile")
+                logger.warning("Dockerfile linting issues found:")
+                logger.warning("%s", output)
+                logger.info("TIP: Run 'hadolint --help' to learn about specific rules")
+                logger.info("You can ignore specific rules with: hadolint --ignore DL3000 Dockerfile")
                 return False, output
             else:
                 logger.info("No Dockerfile linting issues found.")
-                print("[SUCCESS] No Dockerfile linting issues found.")
                 return True, None
                 
         except subprocess.CalledProcessError as e:
             error_msg = f"Hadolint execution failed: {e}"
             logger.error(error_msg, exc_info=True)
-            print(f"\n[ERROR] Error: {error_msg}")
-            print("\nTroubleshooting steps:")
-            print("  1. Verify Hadolint is installed: hadolint --version")
-            print("  2. Check file permissions on the Dockerfile")
-            print("  3. Ensure Dockerfile syntax is valid")
+            logger.error("Error: %s", error_msg)
+            logger.error("Troubleshooting steps:")
+            logger.error("  1. Verify Hadolint is installed: hadolint --version")
+            logger.error("  2. Check file permissions on the Dockerfile")
+            logger.error("  3. Ensure Dockerfile syntax is valid")
             return False, str(e)
         except subprocess.TimeoutExpired:
             error_msg = f"Hadolint scan timed out after 300 seconds"
             logger.error(f"{error_msg} for {self.dockerfile_path}")
-            print(f"\n[ERROR] Error: {error_msg}")
-            print("\nTroubleshooting steps:")
-            print("  1. The Dockerfile may be extremely large")
-            print("  2. Try splitting into smaller Dockerfiles")
-            print("  3. Check for infinite loops or circular dependencies")
+            logger.error("Error: %s", error_msg)
+            logger.error("Troubleshooting steps:")
+            logger.error("  1. The Dockerfile may be extremely large")
+            logger.error("  2. Try splitting into smaller Dockerfiles")
+            logger.error("  3. Check for infinite loops or circular dependencies")
             return False, "Scan timeout"
         except FileNotFoundError:
             error_msg = "Hadolint not found in PATH"
             logger.error(error_msg)
-            print(f"\n[ERROR] Error: {error_msg}")
-            print("\nInstallation instructions:")
-            print(self._get_tool_installation_instructions('hadolint'))
+            logger.error("Error: %s", error_msg)
+            logger.error("Installation instructions:")
+            logger.error("%s", self._get_tool_installation_instructions('hadolint'))
             return False, error_msg
         except Exception as e:
             error_msg = f"Unexpected error during Hadolint scan: {e}"
             logger.error(error_msg, exc_info=True)
-            print(f"\n[ERROR] Error: {error_msg}")
+            logger.error("Error: %s", error_msg)
             return False, str(e)
     
     def _filter_scan_results(self, scan_results: Dict) -> List[Dict]:
@@ -398,7 +397,7 @@ class DockerSecurityScanner:
         # Validate severity input
         severity = self._validate_severity(severity)
         logger.info(f"Starting Trivy JSON scan for image: {self.image_name}")
-        print("\n=== Starting vulnerability scan with Trivy for Json Output ===")
+        logger.info("Starting vulnerability scan with Trivy for JSON output")
         
         try:
             with Progress(
@@ -432,40 +431,40 @@ class DockerSecurityScanner:
                 progress.update(scan_task, completed=True)
             
             if result.stderr:
-                print("Scan warnings:", result.stderr)
+                logger.debug("Tool stderr: %s", result.stderr)
             
             response = json.loads(result.stdout)
             filtered_results = self._filter_scan_results(response)
             
             # Check if vulnerabilities were found
             if not filtered_results:
-                print("[SUCCESS] No vulnerabilities found.")
+                logger.info("No vulnerabilities found.")
             else:
-                print(f"[WARNING] Found {len(filtered_results)} vulnerabilities.")
+                logger.warning("Found %d vulnerabilities.", len(filtered_results))
                 
             return True, filtered_results
             
         except subprocess.TimeoutExpired:
             error_msg = f"Trivy scan timed out after 600 seconds"
             logger.error(error_msg)
-            print(f"Error: {error_msg}")
-            print("\nTroubleshooting:")
-            print("  - The image may be very large. Consider increasing timeout.")
-            print("  - Check your network connection if pulling remote image data.")
-            print("  - Try scanning a specific image layer or component.")
+            logger.error("Error: %s", error_msg)
+            logger.error("Troubleshooting:")
+            logger.error("  - The image may be very large. Consider increasing timeout.")
+            logger.error("  - Check your network connection if pulling remote image data.")
+            logger.error("  - Try scanning a specific image layer or component.")
             return False, None
         except json.JSONDecodeError as e:
             error_msg = f"Failed to parse Trivy output: {e}"
             logger.error(error_msg)
-            print(f"Error: {error_msg}")
-            print("\nTroubleshooting:")
-            print("  - Ensure Trivy is up to date: trivy --version")
-            print("  - Check Trivy database: trivy image --download-db-only")
+            logger.error("Error: %s", error_msg)
+            logger.error("Troubleshooting:")
+            logger.error("  - Ensure Trivy is up to date: trivy --version")
+            logger.error("  - Check Trivy database: trivy image --download-db-only")
             return False, None
         except (subprocess.CalledProcessError, Exception) as e:
             error_msg = f"Trivy scan failed: {e}"
             logger.error(error_msg, exc_info=True)
-            print(f"Error: {error_msg}")
+            logger.error("Error: %s", error_msg)
             return False, None
 
     def scan_image(self, severity: str = "CRITICAL,HIGH") -> Tuple[bool, Optional[str]]:
@@ -483,10 +482,10 @@ class DockerSecurityScanner:
         # Validate severity input
         severity = self._validate_severity(severity)
         logger.info(f"Starting Trivy scan for image: {self.image_name} with severity: {severity}")
-        print("\n=== Starting vulnerability scan with Trivy ===")
+        logger.info("Starting vulnerability scan with Trivy")
         
         try:
-            print(f"Scanning image: {self.image_name}")
+            logger.info("Scanning image: %s", self.image_name)
             result = subprocess.run(
                 [
                     'trivy',
@@ -501,22 +500,22 @@ class DockerSecurityScanner:
                 shell=False
             )
             
-            print("Scan completed.")
+            logger.info("Scan completed.")
             if result.stdout:
-                print(result.stdout)
+                logger.debug("Trivy stdout: %s", result.stdout)
             
             if result.stderr:
-                print("Errors:", result.stderr)
+                logger.debug("Tool stderr: %s", result.stderr)
             
             # Check if vulnerabilities were found based on return code
             # Trivy returns 0 if no vulnerabilities are found with the specified severity
             return result.returncode == 0, result.stdout
             
         except subprocess.TimeoutExpired:
-            print(f"Error: Trivy scan timed out after 600 seconds")
+            logger.error("Error: Trivy scan timed out after 600 seconds")
             return False, "Scan timed out"
         except subprocess.CalledProcessError as e:
-            print(f"Error running Trivy scan: {e}")
+            logger.error("Error running Trivy scan: %s", e)
             return False, str(e)
 
     def advanced_scan(self) -> Dict:
@@ -538,21 +537,21 @@ class DockerSecurityScanner:
                 ["docker", "scout", "quickview", self.image_name], 
                 capture_output=True, text=True, check=True, timeout=300, shell=False
             )
-            print(f"Scan results for {self.image_name}:\n")
-            print(result.stdout)
+            logger.info("Scan results for %s", self.image_name)
+            logger.debug("%s", result.stdout)
             result_dict['success'] = True
             result_dict['output'] = result.stdout
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr if e.stderr else str(e)
-            print(f"Error running Docker Scout: {error_msg}")
+            logger.error("Error running Docker Scout: %s", error_msg)
             result_dict['error'] = error_msg
         except subprocess.TimeoutExpired:
             error_msg = "Docker Scout scan timed out after 300 seconds"
-            print(f"Error: {error_msg}")
+            logger.error("Error: %s", error_msg)
             result_dict['error'] = error_msg
         except FileNotFoundError:
             error_msg = "Docker Scout not found. Please install Docker Scout to use advanced scanning."
-            print(f"Error: {error_msg}")
+            logger.error("Error: %s", error_msg)
             result_dict['error'] = error_msg
         
         return result_dict
@@ -604,11 +603,11 @@ class DockerSecurityScanner:
             results['json_data'] = json_data
 
         # Print final summary
-        print("\n=== Scan Summary ===")
+        logger.info("Scan Summary")
         if scan_status:
-            print("All security scans completed successfully with no issues found.")
+            logger.info("All security scans completed successfully with no issues found.")
         else:
-            print("Some security scans failed or found issues. Please review the results above.")
+            logger.warning("Some security scans failed or found issues. Please review the results above.")
 
         return results
 
@@ -640,10 +639,10 @@ class DockerSecurityScanner:
         try:
             with open(output_file, "w") as f:
                 json.dump(vulnerabilities, f, indent=4)
-            print(f"JSON results saved to {output_file}")
+            logger.info("JSON results saved to %s", output_file)
             return output_file
         except Exception as e:
-            print(f"Error saving results to JSON file: {e}")
+            logger.error("Error saving results to JSON file: %s", e)
             return ""
 
     def save_results_to_csv(self, results: Dict) -> str:
@@ -662,7 +661,7 @@ class DockerSecurityScanner:
         
         vulnerabilities = results.get('json_data', [])
         if not vulnerabilities:
-            print("No vulnerability data to save to CSV")
+            logger.warning("No vulnerability data to save to CSV")
             return ""
         
         try:
@@ -681,10 +680,10 @@ class DockerSecurityScanner:
                     filtered_vuln = {k: vuln.get(k, "") for k in fieldnames}
                     writer.writerow(filtered_vuln)
                     
-            print(f"CSV results saved to {output_file}")
+            logger.info("CSV results saved to %s", output_file)
             return output_file
         except Exception as e:
-            print(f"Error saving results to CSV file: {e}")
+            logger.error("Error saving results to CSV file: %s", e)
             return ""
     
     def save_results_to_pdf(self, results: Dict) -> str:
@@ -887,11 +886,11 @@ class DockerSecurityScanner:
             
             # Save the PDF
             pdf.output(output_file)
-            print(f"PDF report saved to {output_file}")
+            logger.info("PDF report saved to %s", output_file)
             return output_file
             
         except Exception as e:
-            print(f"Error saving results to PDF file: {e}")
+            logger.error("Error saving results to PDF file: %s", e)
             return ""
         
     def generate_all_reports(self, results: Dict) -> Dict:
@@ -906,7 +905,7 @@ class DockerSecurityScanner:
         """
         from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
         
-        print("\n=== Generating Reports ===")
+        logger.info("Generating Reports")
         
         with Progress(
             SpinnerColumn(),
@@ -958,12 +957,12 @@ class DockerSecurityScanner:
                 report_paths['html'] = html_path
             progress.update(html_task, advance=1)
         
-        print("[SUCCESS] All reports generated successfully!")
-        print(f"Results location: {self.RESULTS_DIR}")
-        print(f"\nGenerated files:")
+        logger.info("All reports generated successfully!")
+        logger.info("Results location: %s", self.RESULTS_DIR)
+        logger.debug("Generated files:")
         for report_type, path in report_paths.items():
             if path:
-                print(f"   • {report_type.upper()}: {os.path.basename(path)}")
+                logger.debug("   %s: %s", report_type.upper(), os.path.basename(path))
         
         return report_paths
     
@@ -1006,15 +1005,15 @@ class DockerSecurityScanner:
         overall = (dockerfile_score * 0.3) + (vuln_score * 0.5) + (config_score * 0.2)
         score = round(max(0.0, overall), 1)
 
-        print(f"Security Score: {score}/100")
+        logger.info("Security Score: %s/100", score)
         if score >= 90:
-            print("[EXCELLENT] Excellent security posture!")
+            logger.info("[EXCELLENT] Excellent security posture!")
         elif score >= 70:
-            print("[GOOD] Good security, but some improvements recommended")
+            logger.info("[GOOD] Good security, but some improvements recommended")
         elif score >= 50:
-            print("[FAIR] Fair security - multiple issues need attention")
+            logger.info("[FAIR] Fair security - multiple issues need attention")
         else:
-            print("[POOR] Poor security - immediate action required")
+            logger.info("[POOR] Poor security - immediate action required")
 
         return score
 
@@ -1036,11 +1035,11 @@ class DockerSecurityScanner:
 
         try:
             score = self.score_chain.invoke({"results": results})
-            print(f"Security Score: {score.score}")
+            logger.info("Security Score: %s", score.score)
             return score.score
         except Exception as e:
             logger.warning(f"AI scoring failed: {e}. Falling back to local scoring.")
-            print(f"AI scoring unavailable: {e}. Falling back to local scoring.")
+            logger.warning("AI scoring unavailable: %s. Falling back to local scoring.", e)
             return self._calculate_local_score(results)
     
     def save_results_to_html(self, results: Dict) -> str:
@@ -1072,11 +1071,11 @@ class DockerSecurityScanner:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            print(f"HTML report saved to {output_file}")
+            logger.info("HTML report saved to %s", output_file)
             return output_file
             
         except Exception as e:
-            print(f"Error saving results to HTML file: {e}")
+            logger.error("Error saving results to HTML file: %s", e)
             return ""
 
     def _prepare_html_template_vars(self, results: Dict) -> Dict[str, str]:
