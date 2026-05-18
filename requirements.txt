@@ -7,7 +7,7 @@ langchain-anthropic==1.4.3
 langchain-google-genai==4.2.2
 langchain-ollama==1.1.0
 python-dotenv==1.2.2
-pandas==3.0.2
+pandas==3.0.3
 
 # UI and progress
 tqdm==4.67.3

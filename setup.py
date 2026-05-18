@@ -32,7 +32,7 @@ setup(
         "langchain-google-genai==4.2.2",
         "langchain-ollama==1.1.0",
         "python-dotenv==1.2.2",
-        "pandas==3.0.2",
+        "pandas==3.0.3",
         "tqdm==4.67.3",
         "colorama==0.4.6",
         "rich==15.0.0",

@@ -85,10 +85,10 @@ class TestDockerSecurityScanner(unittest.TestCase):
     def test_validate_severity(self):
         """Test severity validation."""
         from docksec.docker_scanner import DockerSecurityScanner
-        
+        from docksec.enums import Severity
+
         # Valid severities
-        valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]
-        for sev in valid_severities:
+        for sev in Severity.values():
             result = DockerSecurityScanner._validate_severity(sev)
             self.assertIn(sev.upper(), result)
         

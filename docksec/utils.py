@@ -34,6 +34,7 @@ except ImportError:
 from docksec.config import (
     BASE_DIR
 )
+from docksec.enums import LLMProvider
 try:
     from pydantic import BaseModel, Field
 except ImportError:
@@ -162,11 +163,11 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
         
         logger.info(f"Initializing LLM with provider: {provider}, model: {model}")
         
-        if provider == "openai":
+        if provider == LLMProvider.OPENAI:
             api_key = config.get_api_key_for_provider()
             if not os.getenv("OPENAI_API_KEY"):
                 os.environ["OPENAI_API_KEY"] = api_key
-            
+
             llm = ChatOpenAI(
                 model=model,
                 temperature=temperature,
@@ -175,8 +176,8 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             )
             logger.info("OpenAI LLM initialized successfully")
             return llm
-        
-        elif provider == "anthropic":
+
+        elif provider == LLMProvider.ANTHROPIC:
             if not ANTHROPIC_AVAILABLE:
                 raise ImportError(
                     "Anthropic provider requested but langchain-anthropic is not installed. "
@@ -185,7 +186,7 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             api_key = config.get_api_key_for_provider()
             if not os.getenv("ANTHROPIC_API_KEY"):
                 os.environ["ANTHROPIC_API_KEY"] = api_key
-            
+
             llm = ChatAnthropic(
                 model=model,
                 temperature=temperature,
@@ -194,8 +195,8 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             )
             logger.info("Anthropic Claude LLM initialized successfully")
             return llm
-        
-        elif provider == "google":
+
+        elif provider == LLMProvider.GOOGLE:
             if not GOOGLE_AVAILABLE:
                 raise ImportError(
                     "Google provider requested but langchain-google-genai is not installed. "
@@ -204,7 +205,7 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             api_key = config.get_api_key_for_provider()
             if not os.getenv("GOOGLE_API_KEY"):
                 os.environ["GOOGLE_API_KEY"] = api_key
-            
+
             llm = ChatGoogleGenerativeAI(
                 model=model,
                 temperature=temperature,
@@ -213,8 +214,8 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             )
             logger.info("Google Gemini LLM initialized successfully")
             return llm
-        
-        elif provider == "ollama":
+
+        elif provider == LLMProvider.OLLAMA:
             if not OLLAMA_AVAILABLE:
                 raise ImportError(
                     "Ollama provider requested but langchain-ollama is not installed. "
@@ -228,9 +229,9 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             )
             logger.info(f"Ollama LLM initialized successfully with base URL: {config.ollama_base_url}")
             return llm
-        
+
         else:
-            raise ValueError(f"Unsupported LLM provider: {provider}. Supported: openai, anthropic, google, ollama")
+            raise ValueError(f"Unsupported LLM provider: {provider}. Supported: {LLMProvider.values()}")
         
     except Exception as e:
         logger.error(f"Failed to initialize LLM: {str(e)}")

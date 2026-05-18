@@ -10,6 +10,7 @@ import os
 import logging
 from typing import Optional, Any, Dict
 from dataclasses import dataclass, field
+from docksec.enums import LLMProvider, Severity
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class DocksecConfig:
             ValueError: If configuration values are invalid
         """
         # Validate LLM provider
-        valid_providers = ['openai', 'anthropic', 'google', 'ollama']
+        valid_providers = LLMProvider.values()
         if self.llm_provider not in valid_providers:
             raise ValueError(f"Invalid llm_provider: {self.llm_provider}. Valid options: {valid_providers}")
         
@@ -155,7 +156,7 @@ class DocksecConfig:
             raise ValueError(f"Invalid max_file_size_mb: {self.max_file_size_mb}. Must be positive.")
         
         # Validate severity levels
-        valid_severities = {'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'}
+        valid_severities = Severity.values()
         severity_list = [s.strip() for s in self.default_severity.split(',')]
         for severity in severity_list:
             if severity not in valid_severities:
@@ -209,30 +210,30 @@ Note: You can use scan-only mode (--scan-only) without an API key.
         Raises:
             EnvironmentError: If API key is not set for the provider
         """
-        if self.llm_provider == "openai":
+        if self.llm_provider == LLMProvider.OPENAI:
             if not self.openai_api_key:
                 raise EnvironmentError(
                     "OpenAI API key not found. Set OPENAI_API_KEY environment variable or use --scan-only mode."
                 )
             return self.openai_api_key
-        
-        elif self.llm_provider == "anthropic":
+
+        elif self.llm_provider == LLMProvider.ANTHROPIC:
             if not self.anthropic_api_key:
                 raise EnvironmentError(
                     "Anthropic API key not found. Set ANTHROPIC_API_KEY environment variable or use --scan-only mode."
                 )
             return self.anthropic_api_key
-        
-        elif self.llm_provider == "google":
+
+        elif self.llm_provider == LLMProvider.GOOGLE:
             if not self.google_api_key:
                 raise EnvironmentError(
                     "Google API key not found. Set GOOGLE_API_KEY environment variable or use --scan-only mode."
                 )
             return self.google_api_key
-        
-        elif self.llm_provider == "ollama":
+
+        elif self.llm_provider == LLMProvider.OLLAMA:
             return ""
-        
+
         else:
             raise ValueError(f"Unsupported LLM provider: {self.llm_provider}")
     

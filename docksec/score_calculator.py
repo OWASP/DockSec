@@ -7,6 +7,7 @@ It uses LLM-based analysis to provide comprehensive security scoring.
 
 from typing import Dict
 from docksec.config import docker_score_prompt
+from docksec.enums import Severity
 from docksec.utils import ScoreResponse, get_llm, get_custom_logger
 
 # Initialize logger
@@ -128,14 +129,16 @@ class SecurityScoreCalculator:
         if not vulnerabilities:
             breakdown['vulnerabilities'] = 100.0
         else:
-            # Weighted by severity
-            critical_count = sum(1 for v in vulnerabilities if v.get('Severity') == 'CRITICAL')
-            high_count = sum(1 for v in vulnerabilities if v.get('Severity') == 'HIGH')
-            medium_count = sum(1 for v in vulnerabilities if v.get('Severity') == 'MEDIUM')
-            low_count = sum(1 for v in vulnerabilities if v.get('Severity') == 'LOW')
-            
-            # Simplified scoring: deduct more for higher severity
-            deduction = (critical_count * 10) + (high_count * 5) + (medium_count * 2) + (low_count * 1)
+            severity_weights = {
+                Severity.CRITICAL: 10,
+                Severity.HIGH: 5,
+                Severity.MEDIUM: 2,
+                Severity.LOW: 1,
+            }
+            deduction = sum(
+                weight * sum(1 for v in vulnerabilities if v.get('Severity') == sev)
+                for sev, weight in severity_weights.items()
+            )
             breakdown['vulnerabilities'] = max(0, 100 - deduction)
         
         # Configuration score derived from actual Dockerfile analysis

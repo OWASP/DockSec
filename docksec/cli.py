@@ -3,6 +3,7 @@
 import sys
 import os
 import argparse
+from docksec.enums import LLMProvider
 
 def get_version() -> str:
     """Return the installed package version.
@@ -42,7 +43,7 @@ def main() -> None:
     parser.add_argument('--ai-only', action='store_true', help='Run only AI-based recommendations (requires Dockerfile)')
     parser.add_argument('--scan-only', action='store_true', help='Run only Dockerfile/image scanning (requires --image)')
     parser.add_argument('--image-only', action='store_true', help='Scan only the Docker image without Dockerfile analysis')
-    parser.add_argument('--provider', choices=['openai', 'anthropic', 'google', 'ollama'], 
+    parser.add_argument('--provider', choices=LLMProvider.values(),
                        help='LLM provider to use (default: openai, can also set LLM_PROVIDER env var)')
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-3-5-sonnet-20241022, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')

@@ -10,6 +10,7 @@ import sys
 import re
 from pathlib import Path
 from docksec.config import RESULTS_DIR, docker_score_prompt
+from docksec.enums import Severity
 from docksec.utils import ScoreResponse, get_llm, print_section, get_custom_logger
 
 # Initialize logger
@@ -94,9 +95,9 @@ class DockerSecurityScanner:
         if not severity:
             raise ValueError("Severity cannot be empty")
         
-        valid_severities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+        valid_severities = Severity.values()
         severity_list = [s.strip().upper() for s in severity.split(',')]
-        
+
         for sev in severity_list:
             if sev not in valid_severities:
                 raise ValueError(f"Invalid severity level: {sev}. Valid values: {', '.join(valid_severities)}")
@@ -845,9 +846,9 @@ class DockerSecurityScanner:
                 pdf.cell(0, 7, 'No vulnerabilities found.', 0, 1)
             else:
                 # Count vulnerabilities by severity
-                severity_counts = {}
+                severity_counts: Dict[str, int] = {}
                 for vuln in vulnerabilities:
-                    severity = vuln.get('Severity', 'UNKNOWN')
+                    severity = vuln.get('Severity', Severity.UNKNOWN)
                     severity_counts[severity] = severity_counts.get(severity, 0) + 1
                 
                 pdf.set_font('Arial', '', 10)
@@ -986,11 +987,16 @@ class DockerSecurityScanner:
         if not vulnerabilities:
             vuln_score = 100.0
         else:
-            critical = sum(1 for v in vulnerabilities if v.get('Severity') == 'CRITICAL')
-            high = sum(1 for v in vulnerabilities if v.get('Severity') == 'HIGH')
-            medium = sum(1 for v in vulnerabilities if v.get('Severity') == 'MEDIUM')
-            low = sum(1 for v in vulnerabilities if v.get('Severity') == 'LOW')
-            deduction = (critical * 10) + (high * 5) + (medium * 2) + (low * 1)
+            severity_weights = {
+                Severity.CRITICAL: 10,
+                Severity.HIGH: 5,
+                Severity.MEDIUM: 2,
+                Severity.LOW: 1,
+            }
+            deduction = sum(
+                weight * sum(1 for v in vulnerabilities if v.get('Severity') == sev)
+                for sev, weight in severity_weights.items()
+            )
             vuln_score = max(0.0, 100.0 - deduction)
 
         # Configuration score — static Dockerfile checks
@@ -1197,9 +1203,9 @@ class DockerSecurityScanner:
             template_vars['DETAILED_VULNERABILITIES_SECTION'] = ""
         else:
             # Count vulnerabilities by severity
-            severity_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+            severity_counts = {s: 0 for s in Severity.scored_levels()}
             for vuln in vulnerabilities:
-                severity = vuln.get('Severity', 'UNKNOWN')
+                severity = vuln.get('Severity', Severity.UNKNOWN)
                 if severity in severity_counts:
                     severity_counts[severity] += 1
             
@@ -1207,19 +1213,19 @@ class DockerSecurityScanner:
             severity_html = f"""
             <div class="severity-stats">
                 <div class="severity-item severity-critical">
-                    <div class="severity-count">{severity_counts['CRITICAL']}</div>
+                    <div class="severity-count">{severity_counts[Severity.CRITICAL]}</div>
                     <div class="severity-label">Critical</div>
                 </div>
                 <div class="severity-item severity-high">
-                    <div class="severity-count">{severity_counts['HIGH']}</div>
+                    <div class="severity-count">{severity_counts[Severity.HIGH]}</div>
                     <div class="severity-label">High</div>
                 </div>
                 <div class="severity-item severity-medium">
-                    <div class="severity-count">{severity_counts['MEDIUM']}</div>
+                    <div class="severity-count">{severity_counts[Severity.MEDIUM]}</div>
                     <div class="severity-label">Medium</div>
                 </div>
                 <div class="severity-item severity-low">
-                    <div class="severity-count">{severity_counts['LOW']}</div>
+                    <div class="severity-count">{severity_counts[Severity.LOW]}</div>
                     <div class="severity-label">Low</div>
                 </div>
             </div>
