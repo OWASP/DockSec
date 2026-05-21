@@ -124,14 +124,12 @@ def main() -> None:
         try:
             # Import required modules from main.py
             from docksec.utils import (
-                get_custom_logger,
                 load_docker_file,
                 get_llm,
                 analyze_security,
-                AnalyzesResponse,
-                ScoreResponse
+                AnalyzesResponse
             )
-            from docksec.config import docker_agent_prompt, docker_score_prompt, truncate_dockerfile
+            from docksec.config import docker_agent_prompt, truncate_dockerfile
             from pathlib import Path
             
             # Set up the same components as main.py

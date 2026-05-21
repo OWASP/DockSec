@@ -5,6 +5,7 @@ This module handles the calculation of security scores based on scan results.
 It uses LLM-based analysis to provide comprehensive security scoring.
 """
 
+import re
 from typing import Dict
 from docksec.config import docker_score_prompt
 from docksec.enums import Severity

@@ -29,8 +29,6 @@ class TestCLI(unittest.TestCase):
     @patch('docksec.cli.DockerSecurityScanner', create=True)
     def test_compact_output_flag(self, mock_scanner_class):
         """Test --compact-output flag is parsed correctly."""
-        from docksec.cli import main
-        
         # Mock scanner instance
         mock_scanner = Mock()
         mock_scanner_class.return_value = mock_scanner
@@ -56,8 +54,6 @@ class TestCLI(unittest.TestCase):
     @patch('docksec.cli.DockerSecurityScanner', create=True)
     def test_skip_ai_scoring_flag(self, mock_scanner_class):
         """Test --skip-ai-scoring flag is parsed correctly."""
-        from docksec.cli import main
-        
         # Mock scanner instance
         mock_scanner = Mock()
         mock_scanner_class.return_value = mock_scanner
@@ -75,7 +71,6 @@ class TestCLI(unittest.TestCase):
     def test_help_flag_includes_new_options(self):
         """Test that --help includes new CLI options."""
         from docksec.cli import main
-        import sys
         
         # Capture output
         captured_output = []
@@ -140,12 +135,12 @@ class TestCLI(unittest.TestCase):
         mock_scanner.run_full_scan.return_value = {'json_data': []}
         
         with patch('docksec.cli.print'):
-            with patch('os.environ') as mock_env:
+            with patch('os.environ'):
                 # This tests that the env var would be set
                 try:
                     from docksec.cli import main
                     # Would need full mocking to execute
-                except:
+                except Exception:
                     pass
     
     @patch('sys.argv', ['docksec', 'Dockerfile', '-i', 'test:latest', '--model', 'claude-3-5-sonnet'])
@@ -157,11 +152,11 @@ class TestCLI(unittest.TestCase):
         mock_scanner.run_full_scan.return_value = {'json_data': []}
         
         with patch('docksec.cli.print'):
-            with patch('os.environ') as mock_env:
+            with patch('os.environ'):
                 # This tests that the env var would be set
                 try:
                     from docksec.cli import main
-                except:
+                except Exception:
                     pass
 
 

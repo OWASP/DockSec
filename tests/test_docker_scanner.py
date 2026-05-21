@@ -3,7 +3,7 @@ import unittest
 import os
 import tempfile
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 # Import after mocking external dependencies
@@ -250,7 +250,6 @@ class TestDockerSecurityScanner(unittest.TestCase):
         from docksec.docker_scanner import ScanResultsCache
         import tempfile
         import shutil
-        import json
         
         temp_dir = tempfile.mkdtemp()
         try:

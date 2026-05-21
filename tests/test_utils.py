@@ -3,7 +3,6 @@ import unittest
 import os
 import tempfile
 from unittest.mock import patch, Mock
-from io import StringIO
 
 # Import after mocking external dependencies
 import sys
@@ -144,7 +143,7 @@ class TestUtils(unittest.TestCase):
             remediation=["Fix 1", "Fix 2"]
         )
         
-        with patch('docksec.utils.console') as mock_console:
+        with patch('docksec.utils.console'):
             with patch('docksec.utils.print_section') as mock_print_section:
                 analyze_security(response, compact=True)
                 
@@ -169,7 +168,7 @@ class TestUtils(unittest.TestCase):
             remediation=["Fix 1"]
         )
         
-        with patch('docksec.utils.console') as mock_console:
+        with patch('docksec.utils.console'):
             with patch('docksec.utils.print_section') as mock_print_section:
                 analyze_security(response, compact=False)
                 
@@ -194,7 +193,7 @@ class TestUtils(unittest.TestCase):
             remediation=["Rotate credentials"]
         )
         
-        with patch('docksec.utils.console') as mock_console:
+        with patch('docksec.utils.console'):
             with patch('docksec.utils.print_section') as mock_print_section:
                 analyze_security(response, compact=True)
                 

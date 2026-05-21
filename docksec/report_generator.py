@@ -13,7 +13,6 @@ consistent data representation.
 
 import csv
 import json
-import logging
 import os
 import re
 from datetime import datetime
@@ -109,7 +108,7 @@ class ReportGenerator:
         try:
             with open(output_file, "w") as f:
                 json.dump(report_data, f, indent=4)
-            logger.info(f"JSON report saved successfully")
+            logger.info("JSON report saved successfully")
             print(f"[SUCCESS] JSON report saved to {output_file}")
             return output_file
         except Exception as e:
@@ -321,7 +320,7 @@ class ReportGenerator:
                         )
 
             pdf.output(output_file)
-            logger.info(f"PDF report saved successfully")
+            logger.info("PDF report saved successfully")
             print(f"[SUCCESS] PDF report saved to {output_file}")
             return output_file
 
@@ -355,7 +354,7 @@ class ReportGenerator:
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
-            logger.info(f"HTML report saved successfully")
+            logger.info("HTML report saved successfully")
             print(f"[SUCCESS] HTML report saved to {output_file}")
             return output_file
 

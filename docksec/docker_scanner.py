@@ -2,7 +2,6 @@ import os
 import json
 import subprocess
 import csv
-import logging
 import hashlib
 from typing import List, Tuple, Dict, Optional
 from datetime import datetime
@@ -450,7 +449,7 @@ class DockerSecurityScanner:
             print("  3. Ensure Dockerfile syntax is valid")
             return False, str(e)
         except subprocess.TimeoutExpired:
-            error_msg = f"Hadolint scan timed out after 300 seconds"
+            error_msg = "Hadolint scan timed out after 300 seconds"
             logger.error(f"{error_msg} for {self.dockerfile_path}")
             print(f"\n[ERROR] Error: {error_msg}")
             print("\nTroubleshooting steps:")
@@ -574,7 +573,7 @@ class DockerSecurityScanner:
             return True, filtered_results
             
         except subprocess.TimeoutExpired:
-            error_msg = f"Trivy scan timed out after 600 seconds"
+            error_msg = "Trivy scan timed out after 600 seconds"
             logger.error(error_msg)
             print(f"[ERROR] {error_msg}")
             return False, None
@@ -628,7 +627,7 @@ class DockerSecurityScanner:
             return result.returncode == 0, result.stdout
             
         except subprocess.TimeoutExpired:
-            print(f"[ERROR] Trivy scan timed out after 600 seconds")
+            print("[ERROR] Trivy scan timed out after 600 seconds")
             return False, "Scan timed out"
         except subprocess.CalledProcessError as e:
             print(f"[ERROR] Error running Trivy scan: {e}")
@@ -1054,16 +1053,20 @@ class DockerSecurityScanner:
         
         # Generate reports quietly
         json_path = self.save_results_to_json(results)
-        if json_path: report_paths['json'] = json_path
+        if json_path:
+            report_paths['json'] = json_path
         
         csv_path = self.save_results_to_csv(results)
-        if csv_path: report_paths['csv'] = csv_path
+        if csv_path:
+            report_paths['csv'] = csv_path
         
         pdf_path = self.save_results_to_pdf(results)
-        if pdf_path: report_paths['pdf'] = pdf_path
+        if pdf_path:
+            report_paths['pdf'] = pdf_path
         
         html_path = self.save_results_to_html(results)
-        if html_path: report_paths['html'] = html_path
+        if html_path:
+            report_paths['html'] = html_path
         
         print(f"\n[SUCCESS] Reports generated in: {self.RESULTS_DIR}")
         generated = [t.upper() for t, p in report_paths.items() if p]

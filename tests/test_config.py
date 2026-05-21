@@ -41,7 +41,7 @@ class TestConfig(unittest.TestCase):
         
         lines = truncated.split('\n')
         # Should have at most 50 original lines plus truncation marker
-        self.assertLessEqual(len([l for l in lines if l.strip()]), 51)
+        self.assertLessEqual(len([line for line in lines if line.strip()]), 51)
         self.assertIn("truncated", truncated.lower())
     
     def test_truncate_dockerfile_by_chars(self):
