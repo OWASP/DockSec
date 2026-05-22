@@ -12,31 +12,31 @@ export LLM_MODEL="${INPUT_LLM_MODEL}"
 # The inputs are passed as environment variables prefixed with INPUT_
 # e.g., inputs.dockerfile becomes INPUT_DOCKERFILE
 
-ARGS=""
+ARGS=()
 
 if [ -n "${INPUT_DOCKERFILE}" ]; then
-  ARGS="${INPUT_DOCKERFILE}"
+  ARGS+=("${INPUT_DOCKERFILE}")
 fi
 
 if [ -n "${INPUT_IMAGE}" ]; then
-  ARGS="${ARGS} -i ${INPUT_IMAGE}"
+  ARGS+=("-i" "${INPUT_IMAGE}")
 fi
 
 if [ -n "${INPUT_OUTPUT}" ]; then
-  ARGS="${ARGS} -o ${INPUT_OUTPUT}"
+  ARGS+=("-o" "${INPUT_OUTPUT}")
 fi
 
 if [ "${INPUT_AI_ONLY}" = "true" ]; then
-  ARGS="${ARGS} --ai-only"
+  ARGS+=("--ai-only")
 fi
 
 if [ "${INPUT_SCAN_ONLY}" = "true" ]; then
-  ARGS="${ARGS} --scan-only"
+  ARGS+=("--scan-only")
 fi
 
 if [ "${INPUT_IMAGE_ONLY}" = "true" ]; then
-  ARGS="${ARGS} --image-only"
+  ARGS+=("--image-only")
 fi
 
-echo "Running: docksec ${ARGS}"
-docksec ${ARGS}
+printf 'Running: docksec'; printf ' %q' "${ARGS[@]}"; printf '\n'
+docksec "${ARGS[@]}"
