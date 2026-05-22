@@ -95,6 +95,18 @@ class DocksecConfig:
         # Load provider from environment
         self.llm_provider = os.getenv("LLM_PROVIDER", self.llm_provider).lower()
         
+        # Load model from environment or set sensible defaults based on provider
+        env_model = os.getenv("LLM_MODEL")
+        if env_model:
+            self.llm_model = env_model
+        elif self.llm_model == "gpt-4o":  # If still default, adjust based on provider
+            if self.llm_provider == LLMProvider.ANTHROPIC:
+                self.llm_model = "claude-3-5-sonnet-20241022"
+            elif self.llm_provider == LLMProvider.GOOGLE:
+                self.llm_model = "gemini-1.5-pro"
+            elif self.llm_provider == LLMProvider.OLLAMA:
+                self.llm_model = "llama3.1"
+        
         # Load Ollama base URL from environment
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", self.ollama_base_url)
         

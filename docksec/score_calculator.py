@@ -29,11 +29,19 @@ class SecurityScoreCalculator:
     def __init__(self):
         """Initialize the security score calculator with LLM chain."""
         logger.info("Initializing SecurityScoreCalculator")
+        from docksec.enums import LLMProvider
+        from docksec.config_manager import get_config
+        config = get_config()
+        provider = config.llm_provider
         llm = get_llm()
-        self.score_chain = docker_score_prompt | llm.with_structured_output(
-            ScoreResponse, 
-            method="json_mode"
-        )
+        
+        if provider == LLMProvider.OPENAI:
+            self.score_chain = docker_score_prompt | llm.with_structured_output(
+                ScoreResponse, 
+                method="json_mode"
+            )
+        else:
+            self.score_chain = docker_score_prompt | llm.with_structured_output(ScoreResponse)
     
     def calculate_score(self, results: Dict) -> float:
         """

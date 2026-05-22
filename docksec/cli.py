@@ -140,7 +140,18 @@ def main() -> None:
             
             # Set up the same components as main.py
             llm = get_llm()
-            Report_llm = llm.with_structured_output(AnalyzesResponse, method="json_mode")
+            
+            # Use appropriate structured output method based on provider
+            from docksec.enums import LLMProvider
+            config = get_config()
+            provider = config.llm_provider
+            
+            if provider == LLMProvider.OPENAI:
+                Report_llm = llm.with_structured_output(AnalyzesResponse, method="json_mode")
+            else:
+                # For Anthropic, Google, and Ollama, let LangChain choose the best method (usually tool calling)
+                Report_llm = llm.with_structured_output(AnalyzesResponse)
+                
             analyser_chain = docker_agent_prompt | Report_llm
             
             # Load and analyze the Dockerfile

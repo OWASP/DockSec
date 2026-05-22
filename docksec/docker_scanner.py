@@ -248,8 +248,16 @@ class DockerSecurityScanner:
             self.score_chain = None
         else:
             try:
+                from docksec.enums import LLMProvider
+                from docksec.config_manager import get_config
+                config = get_config()
+                provider = config.llm_provider
                 llm = get_llm()
-                self.score_chain = docker_score_prompt | llm.with_structured_output(ScoreResponse, method="json_mode")
+                
+                if provider == LLMProvider.OPENAI:
+                    self.score_chain = docker_score_prompt | llm.with_structured_output(ScoreResponse, method="json_mode")
+                else:
+                    self.score_chain = docker_score_prompt | llm.with_structured_output(ScoreResponse)
             except Exception as e:
                 logger.warning(f"Failed to initialize AI scoring: {e}")
                 self.score_chain = None
