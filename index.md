@@ -35,8 +35,8 @@ type: documentation
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OWASP/DockSec/main/images/docksec-logo-for-github.png" alt="DockSec Logo" width="400"><br>
-  <img src="https://raw.githubusercontent.com/OWASP/DockSec/main/images/owasp-logo.png" alt="OWASP Logo" width="200">
+  <img src="https://raw.githubusercontent.com/OWASP/DockSec/main/images/docksec-logo-for-github.png" alt="DockSec Logo" width="600"><br>
+  <img src="https://raw.githubusercontent.com/OWASP/DockSec/main/images/owasp-logo.png" alt="OWASP Logo" width="300">
 </p>
 
 <h1 align="center"><a href="https://owasp.org/DockSec/">DockSec</a></h1>
