@@ -36,8 +36,6 @@ def main() -> None:
     Main entry point for the DockSec CLI tool.
     Parses arguments and coordinates AI analysis and security scanning.
     """
-    import logging
-    
     # Set CLI mode to suppress INFO logs for user-facing output
     os.environ["DOCKSEC_CLI_MODE"] = "true"
     
