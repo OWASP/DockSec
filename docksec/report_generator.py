@@ -108,6 +108,10 @@ class ReportGenerator:
             "vulnerabilities": json_results,
             "severity_counts": self._count_by_severity(json_results),
         }
+        
+        # Add AI findings if available
+        if "ai_findings" in results:
+            report_data["ai_analysis"] = results["ai_findings"]
 
         try:
             with open(output_file, "w") as f:
@@ -235,6 +239,56 @@ class ReportGenerator:
             pdf.multi_cell_with_title("Scan Date:", results.get("timestamp", ""))
             pdf.multi_cell_with_title("Analysis Score:", str(self.analysis_score))
             pdf.ln(5)
+
+            # AI Dockerfile Analysis (if available)
+            if "ai_findings" in results:
+                ai_findings = results["ai_findings"]
+                pdf.add_section_header("AI Dockerfile Analysis")
+                
+                # Vulnerabilities
+                if ai_findings.get("vulnerabilities"):
+                    pdf.set_font("helvetica", "B", 10)
+                    pdf.cell(0, 7, "Vulnerabilities:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("helvetica", "", 9)
+                    for i, vuln in enumerate(ai_findings["vulnerabilities"], 1):
+                        pdf.multi_cell(0, 5, f"{i}. {vuln}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(2)
+                
+                # Best Practices
+                if ai_findings.get("best_practices"):
+                    pdf.set_font("helvetica", "B", 10)
+                    pdf.cell(0, 7, "Best Practices:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("helvetica", "", 9)
+                    for i, practice in enumerate(ai_findings["best_practices"], 1):
+                        pdf.multi_cell(0, 5, f"{i}. {practice}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(2)
+                
+                # Security Risks
+                if ai_findings.get("security_risks"):
+                    pdf.set_font("helvetica", "B", 10)
+                    pdf.cell(0, 7, "Security Risks:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("helvetica", "", 9)
+                    for i, risk in enumerate(ai_findings["security_risks"], 1):
+                        pdf.multi_cell(0, 5, f"{i}. {risk}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(2)
+                
+                # Exposed Credentials
+                if ai_findings.get("exposed_credentials"):
+                    pdf.set_font("helvetica", "B", 10)
+                    pdf.cell(0, 7, "Exposed Credentials:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("helvetica", "", 9)
+                    for i, cred in enumerate(ai_findings["exposed_credentials"], 1):
+                        pdf.multi_cell(0, 5, f"{i}. {cred}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(2)
+                
+                # Remediation Steps
+                if ai_findings.get("remediation"):
+                    pdf.set_font("helvetica", "B", 10)
+                    pdf.cell(0, 7, "Remediation Steps:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.set_font("helvetica", "", 9)
+                    for i, step in enumerate(ai_findings["remediation"], 1):
+                        pdf.multi_cell(0, 5, f"{i}. {step}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(5)
 
             # Image Information (if available)
             if "image_info" in results:

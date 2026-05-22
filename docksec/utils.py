@@ -1,7 +1,7 @@
 import logging
 import sys
 import os
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Dict
 
 # Import OpenAI (required)
 try:
@@ -61,11 +61,15 @@ from openai import (
     APITimeoutError
 )
 
-def get_custom_logger(name: str = 'Docksec'):
+def get_custom_logger(name: str = 'Docksec', user_facing: bool = False):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    # Check for environment variable to control log level (used by CLI)
+    cli_mode = os.getenv("DOCKSEC_CLI_MODE", "false").lower() == "true"
+    log_level = logging.WARNING if (user_facing or cli_mode) else logging.INFO
+    logger.setLevel(log_level)
     formatter = logging.Formatter('%(levelname)s - %(name)s - Line %(lineno)d: %(message)s')
     handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(log_level)
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
@@ -284,13 +288,17 @@ def print_section(title: str, items: List[str], color: str, max_items: int = 5) 
     if len(items) > max_items:
         console.print(f"  [dim]... and {len(items) - max_items} more[/]")
 
-def analyze_security(response: AnalyzesResponse, compact: bool = True) -> None:
+def analyze_security(response: AnalyzesResponse, compact: bool = True, report_path: str = "") -> Dict:
     """
-    Analyze and display security findings from Dockerfile analysis (compact mode).
+    Analyze and display security findings from Dockerfile analysis.
     
     Args:
         response: AnalyzesResponse object containing vulnerability findings
         compact: If True, show only top items; if False, show all
+        report_path: Path to the generated reports directory
+        
+    Returns:
+        Dictionary containing all findings for report generation
     """
     max_items = 3 if compact else 10
 
@@ -309,7 +317,20 @@ def analyze_security(response: AnalyzesResponse, compact: bool = True) -> None:
     print_section("Exposed Credentials", exposed_credentials, "magenta", max_items)
     print_section("Remediation Steps", remediation, "green", max_items)
     
-    console.print("\n[dim]For detailed AI analysis, check the generated reports[/]")
+    # Build message with report location if provided
+    if report_path:
+        console.print(f"\n[dim]For detailed AI analysis, check the generated reports at: {report_path}[/]")
+    else:
+        console.print("\n[dim]For detailed AI analysis, check the generated reports[/]")
+    
+    # Return findings for report generation
+    return {
+        "vulnerabilities": vulnerabilities,
+        "best_practices": best_practices,
+        "security_risks": security_risks,
+        "exposed_credentials": exposed_credentials,
+        "remediation": remediation
+    }
     
     
 

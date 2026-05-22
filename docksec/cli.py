@@ -36,6 +36,11 @@ def main() -> None:
     Main entry point for the DockSec CLI tool.
     Parses arguments and coordinates AI analysis and security scanning.
     """
+    import logging
+    
+    # Set CLI mode to suppress INFO logs for user-facing output
+    os.environ["DOCKSEC_CLI_MODE"] = "true"
+    
     from docksec.enums import LLMProvider
     parser = argparse.ArgumentParser(description='Docker Security Analysis Tool')
     parser.add_argument('dockerfile', nargs='?', help='Path to the Dockerfile to analyze (optional when using --image-only)')
@@ -128,6 +133,9 @@ def main() -> None:
         config = get_config()
         print(f"[INFO] AI Provider: {config.llm_provider}")
     
+    # Initialize AI findings storage
+    ai_findings = None
+    
     # Run the AI-based recommendation tool
     if run_ai:
         print("\n=== Running AI-based Dockerfile analysis ===")
@@ -139,7 +147,7 @@ def main() -> None:
                 analyze_security,
                 AnalyzesResponse
             )
-            from docksec.config import docker_agent_prompt, truncate_dockerfile
+            from docksec.config import docker_agent_prompt, truncate_dockerfile, RESULTS_DIR
             from pathlib import Path
             
             # Set up the same components as main.py
@@ -168,7 +176,7 @@ def main() -> None:
             truncated_content = truncate_dockerfile(filecontent, max_lines=50, max_chars=2000)
             
             response = analyser_chain.invoke({"filecontent": truncated_content})
-            analyze_security(response, compact=True)
+            ai_findings = analyze_security(response, compact=True, report_path=RESULTS_DIR)
             
         except ImportError as e:
             print(f"Error: Required modules not found - {e}")
@@ -203,6 +211,10 @@ def main() -> None:
             
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)
+            
+            # Add AI findings to results if available
+            if ai_findings:
+                results["ai_findings"] = ai_findings
             
             # Generate all reports
             scanner.generate_all_reports(results)
