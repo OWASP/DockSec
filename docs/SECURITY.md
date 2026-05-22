@@ -53,18 +53,26 @@ We will make every effort to respond to your report according to the following t
 
 ### API Key Security
 
-DockSec uses OpenAI API keys for AI-powered analysis. To keep your keys secure:
+DockSec supports multiple LLM providers (including OpenAI, Anthropic, Google, and Ollama). To keep your provider credentials secure:
 
 1. **Never commit API keys** to version control
    ```bash
    # Use environment variables
-   export OPENAI_API_KEY="your-key-here"
+   export OPENAI_API_KEY="your-openai-key"
+   export ANTHROPIC_API_KEY="your-anthropic-key"
+   export GOOGLE_API_KEY="your-google-key"
+   export OLLAMA_API_KEY="your-ollama-key"
    
    # Or use a .env file (ensure it's in .gitignore)
-   echo "OPENAI_API_KEY=your-key-here" > .env
+   cat <<EOF > .env
+   OPENAI_API_KEY=your-openai-key
+   ANTHROPIC_API_KEY=your-anthropic-key
+   GOOGLE_API_KEY=your-google-key
+   OLLAMA_API_KEY=your-ollama-key
+   EOF
    ```
 
-2. **Restrict API key permissions** in your OpenAI dashboard
+2. **Restrict API key permissions** in each provider dashboard
 3. **Rotate keys regularly**, especially if they may have been exposed
 4. **Monitor API usage** for unexpected activity
 
