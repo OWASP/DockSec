@@ -10,22 +10,19 @@ type: documentation
   <a href="https://owasp.org/DockSec/"><img src="https://img.shields.io/badge/Incubator-blue?&label=level&style=for-the-badge" alt="OWASP Incubator"></a>
   <a href="https://owasp.org/DockSec/"><img src="https://img.shields.io/badge/Code-blue?label=type&style=for-the-badge" alt="OWASP Code"></a>
   <a href="https://owasp.slack.com/archives/C0APXGCUW7M"><img src="https://img.shields.io/badge/%23project--docksec-blue?label=slack&logoColor=white&style=for-the-badge" alt="Slack"></a>
+  <a href="https://github.com/OWASP/DockSec/actions"><img src="https://img.shields.io/github/actions/workflow/status/OWASP/DockSec/python-app.yml?branch=main&style=for-the-badge&label=Build&color=blue" alt="Build Status"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/OWASP/DockSec/actions"><img src="https://img.shields.io/github/actions/workflow/status/OWASP/DockSec/python-app.yml?branch=main&style=for-the-badge&label=Build&color=blue" alt="Build Status"></a>
   <a href="https://github.com/OWASP/DockSec/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge" alt="License"></a>
   <a href="https://github.com/OWASP/DockSec/commits/main/"><img src="https://img.shields.io/github/last-commit/OWASP/DockSec/main?color=blue&style=for-the-badge&label=Last%20commit" alt="Last Commit"></a>
+  <a href="https://github.com/OWASP/DockSec/graphs/contributors"><img src="https://img.shields.io/github/contributors/OWASP/DockSec?style=for-the-badge&label=Contributors&color=blue" alt="Contributors"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/OWASP/DockSec/graphs/contributors"><img src="https://img.shields.io/github/contributors/OWASP/DockSec?style=for-the-badge&label=Contributors&color=blue" alt="Contributors"></a>
   <a href="https://github.com/OWASP/DockSec/network/members"><img src="https://img.shields.io/github/forks/OWASP/DockSec?style=for-the-badge&label=Forks&color=blue" alt="Forks"></a>
   <a href="https://github.com/OWASP/DockSec/stargazers"><img src="https://img.shields.io/github/stars/OWASP/DockSec?style=for-the-badge&label=Stars&color=blue" alt="Stars"></a>
-</p>
-
-<p align="center">
-  <a href="https://clickpy.clickhouse.com/dashboard/docksec"><img src="https://static.pepy.tech/badge/docksec?style=for-the-badge&color=blue" alt="PyPI Downloads"></a>
+  <a href="https://clickpy.clickhouse.com/dashboard/docksec"><img src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&label=Downloads&query=$.total_downloads&url=https://api.pepy.tech/api/v2/projects/docksec&color=blue" alt="PyPI Downloads"></a>
 </p>
 
 <p align="center">
