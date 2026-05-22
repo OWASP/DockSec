@@ -1,10 +1,11 @@
 ---
-title: GettingStarted
+title: Getting-Started
 displaytext: Getting Started
 layout: null
 tab: true
 order: 3
 type: documentation
+level: 2
 tags: docksec
 ---
 

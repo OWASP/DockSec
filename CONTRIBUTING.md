@@ -29,6 +29,39 @@ This project and everyone participating in it is governed by our commitment to f
 
 ## 🤝 How Can I Contribute?
 
+The following diagram illustrates the complete contribution workflow:
+
+```mermaid
+flowchart TD
+    Start([Start]) --> CreateIssue[Create New Issue]
+    Start --> FindIssue[Find Existing Issue]
+    CreateIssue --> GetAssigned[**Get Assigned to Issue**]
+    FindIssue --> GetAssigned
+    GetAssigned --> ResolveIssue[**Resolve Issue**<br/>work on code/docs/tests]
+
+    ResolveIssue --> RunChecks{**Run `make check-test`**<br/>locally!}
+    RunChecks -->|Fails| WP1[ ]
+    RunChecks -->|Passes| PushChanges[**Push Changes to<br/>GitHub Fork Branch**]
+    WP1 -.-> ResolveIssue
+
+    PushChanges --> CreatePR[Create Pull Request]
+    CreatePR --> WaitAutoChecks[**Wait for Automated Checks**]
+    
+    WaitAutoChecks --> RequestReview[Request Review from<br/>Project Maintainers]
+    RequestReview --> WaitMaintainer[Wait for Maintainers' Comments]
+
+    WaitMaintainer --> HasMaintainerComments{**Resolved?**}
+    HasMaintainerComments -->|No| ResolveIssue
+    HasMaintainerComments -->|Yes| CheckCI{**CI/CD Passing?**}
+
+    CheckCI -->|Yes| ReadyMerge([PR Ready for Merge])
+    CheckCI -->|No| ResolveIssue
+
+    style Start fill:#4caf50,stroke:#2e7d32,stroke-width:2px,color:#ffffff
+    style ReadyMerge fill:#4caf50,stroke:#2e7d32,stroke-width:2px,color:#ffffff
+    style ResolveIssue fill:#ff9800,stroke:#f57c00,stroke-width:2px,color:#000000
+```
+
 ### Reporting Bugs
 
 Before creating bug reports, please check existing issues to avoid duplicates. When you create a bug report, include as many details as possible:
