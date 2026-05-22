@@ -5,6 +5,35 @@ All notable changes to DockSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.5.21] - 2026-05-21
+
+### Added
+- **OWASP Project Website**: Launched the official project site at `https://owasp.org/DockSec/` with a modern, tabbed interface.
+- **GitHub Action for Marketplace**: Created a Docker-based GitHub Action (`action.yml`) with pre-installed security tools (**Trivy** and **Hadolint**) for seamless CI/CD integration.
+- **Governance & Community**:
+  - Added `MENTORS.md` to support new contributors.
+  - Added `SPONSORSHIP.md` to facilitate project funding.
+  - Enabled GitHub Sponsors via `.github/FUNDING.yml`.
+  - Integrated official Slack channel (`#project-docksec`).
+- **Developer Tooling**: Added a root-level `Makefile` to standardize environment setup, linting, testing, and security scanning.
+
+### Changed
+- **Branding & UI**:
+  - Redesigned `README.md` and `index.md` with a centered "pyramid" badge layout and professional `for-the-badge` styling.
+  - Updated project logo rendering using modern `<picture>` tags.
+- **Project Infrastructure**:
+  - Standardized all repository links and documentation to point to the official `OWASP/DockSec` repository.
+  - Standardized project URL to `https://owasp.org/DockSec/`.
+- **Documentation**:
+  - Moved `CONTRIBUTING.md` to the root directory for better visibility.
+  - Added a Mermaid workflow diagram to the contribution guide.
+
+### Fixed
+- **Website Navigation**: Standardized tab file naming and titles to resolve Jekyll build errors on the OWASP site.
+- **Stats Badges**: Fixed the PyPI downloads badge to show **total overall downloads** using a reliable Shields.io provider.
+
+---
+
 ## [2026.5.6] - 2026-05-06
 
 ### Changed
