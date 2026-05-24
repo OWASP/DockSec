@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  docksec:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: owasp/docksec:latest
+    container_name: docksec-scanner
+    
+    # Mount docker socket for image scanning
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./Dockerfile:/scan/Dockerfile:ro
+      - ./results:/scan/results:rw
+    
+    # Environment variables for API keys
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - DOCKSEC_USE_CACHE=${DOCKSEC_USE_CACHE:-true}
+    
+    # Override default entrypoint for cli mode
+    entrypoint: docksec
+    command:
+      - /scan/Dockerfile
+      - -i
+      - ${IMAGE_NAME:-myapp:latest}
+    
+    # Resource limits (optional)
+    # Deploy section is used in Compose v3
+    restart: "no"
+
+  # Example service showing how to test a built image
+  test-image:
+    build:
+      context: .
+      dockerfile: Dockerfile.example
+    image: myapp:latest
+    profiles:
+      - example

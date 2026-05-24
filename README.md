@@ -66,6 +66,38 @@ For questions or discussions, please join the [#project-docksec](https://owasp.s
 
 ## Quick Start
 
+### 🐳 Docker Runner (Recommended - Zero Dependencies)
+
+The easiest way to get started is with Docker — no installation needed! This method bundles Trivy, Hadolint, and DockSec into a single, ready-to-run package.
+
+```bash
+# Scan a Docker image only
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  owasp/docksec:latest \
+  --image-only -i myapp:latest
+```
+
+# Scan Dockerfile + Docker image (full analysis)
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd):/scan \
+  -v $(pwd)/results:/scan/results \
+  -e OPENAI_API_KEY="your-api-key" \
+  owasp/docksec:latest \
+  /scan/Dockerfile -i myapp:latest
+```
+
+Results will be saved to `./results/` on your host machine.
+
+**Why Docker Runner?**
+- Zero installation overhead (just `docker run`)
+- Consistent across Linux, macOS, Windows
+- No dependency conflicts
+- Security isolation
+
+For comprehensive Docker usage, see [docs/DOCKER_USAGE.md](docs/DOCKER_USAGE.md).
+
 ### GitHub Action
 
 Integrate DockSec into your GitHub Actions workflow:

@@ -44,6 +44,10 @@ inputs:
     description: 'Scan image without Dockerfile analysis'
     required: false
     default: 'false'
+  skip_ai_scoring:
+    description: 'Skip AI-based security scoring (use local scoring only)'
+    required: false
+    default: 'false'
 
 runs:
   using: 'docker'

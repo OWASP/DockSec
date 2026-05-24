@@ -1,7 +1,12 @@
 #!/bin/bash
 set -e
 
-# Set environment variables from inputs
+# If arguments are provided (e.g. from docker-runner.sh), run docksec directly
+if [ $# -gt 0 ]; then
+  exec docksec "$@"
+fi
+
+# Set environment variables from inputs (for GitHub Actions)
 export OPENAI_API_KEY="${INPUT_OPENAI_API_KEY}"
 export ANTHROPIC_API_KEY="${INPUT_ANTHROPIC_API_KEY}"
 export GOOGLE_API_KEY="${INPUT_GOOGLE_API_KEY}"
