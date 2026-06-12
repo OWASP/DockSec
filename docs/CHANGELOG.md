@@ -5,6 +5,14 @@ All notable changes to DockSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Docker Compose security scanning support (`--compose` flag).
+- Detection for compose-level misconfigurations (e.g., privileged mode, host network, missing resource limits).
+- Automatic scanning of all services defined in a docker-compose file.
+- Integration of compose findings into the existing LLM remediation and scoring pipeline.
+
 ## [2026.5.22.2] - 2026-05-22
 
 ### Changed
@@ -386,8 +394,8 @@ This release focuses on documentation, community building, and making DockSec re
 ## Upcoming Features (Roadmap)
 
 ### Planned for v0.1.0
-- [ ] Docker Compose support
-- [ ] Multi-container analysis
+- [x] Docker Compose support
+- [x] Multi-container analysis
 - [ ] Kubernetes manifest scanning
 - [ ] Custom rule engine
 - [ ] Plugin system for extensibility

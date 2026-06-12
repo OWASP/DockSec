@@ -1,0 +1,51 @@
+version: '3.8'
+services:
+  web:
+    image: nginx:1.25.3-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    read_only: true
+    user: "101:101"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - frontend
+
+  db:
+    image: postgres:15.5-alpine
+    user: "70:70"
+    read_only: true
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+
+secrets:
+  db_password:
+    file: ./db_password.txt

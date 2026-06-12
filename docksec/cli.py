@@ -41,8 +41,9 @@ def main() -> None:
     
     from docksec.enums import LLMProvider
     parser = argparse.ArgumentParser(description='Docker Security Analysis Tool')
-    parser.add_argument('dockerfile', nargs='?', help='Path to the Dockerfile to analyze (optional when using --image-only)')
+    parser.add_argument('dockerfile', nargs='?', help='Path to the Dockerfile to analyze (optional when using --image-only or --compose)')
     parser.add_argument('-i', '--image', help='Docker image name to scan')
+    parser.add_argument('-c', '--compose', nargs='?', const='auto', help='Path to docker-compose file to scan. If no path is provided, auto-detects in current directory.')
     parser.add_argument('-o', '--output', help='Output file for the report (default: security_report.txt)')
     parser.add_argument('--ai-only', action='store_true', help='Run only AI-based recommendations (requires Dockerfile)')
     parser.add_argument('--scan-only', action='store_true', help='Run only Dockerfile/image scanning (requires --image)')
@@ -76,11 +77,12 @@ def main() -> None:
         sys.exit(1)
     
     # Validate Dockerfile requirement
-    if not args.image_only and not args.dockerfile:
-        print("Error: Dockerfile path is required unless using --image-only")
+    if not args.image_only and not args.compose and not args.dockerfile:
+        print("Error: Dockerfile path is required unless using --image-only or --compose")
         print("Usage examples:")
         print("  docksec Dockerfile -i myapp:latest          # Analyze both Dockerfile and image")
         print("  docksec --image-only -i myapp:latest        # Scan only the image")
+        print("  docksec --compose docker-compose.yml        # Scan compose file and its services")
         print("  docksec --ai-only Dockerfile                # AI analysis only")
         sys.exit(1)
     
@@ -100,26 +102,53 @@ def main() -> None:
         print("[INFO] No image provided for scan-only mode. Running Dockerfile analysis only.")
     
     # Determine which tools to run
-    if args.image_only:
+    if args.compose:
+        run_ai = not args.scan_only
+        run_scan = True
+        run_dockerfile_analysis = False
+        run_compose_analysis = True
+        mode_desc = "Compose Analysis"
+        
+        # Auto-detect compose file if needed
+        compose_path = args.compose
+        if compose_path == 'auto':
+            for name in ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']:
+                if os.path.isfile(name):
+                    compose_path = name
+                    break
+            if compose_path == 'auto':
+                print("Error: Could not auto-detect a docker-compose file in the current directory.")
+                sys.exit(1)
+        
+        if not os.path.isfile(compose_path):
+            print(f"Error: Compose file not found at {compose_path}")
+            sys.exit(1)
+            
+        args.compose = compose_path
+    elif args.image_only:
         run_ai = False
         run_scan = True
         run_dockerfile_analysis = False
+        run_compose_analysis = False
         mode_desc = "Image-only Scan"
     elif args.ai_only:
         run_ai = True
         run_scan = False
         run_dockerfile_analysis = True
+        run_compose_analysis = False
         mode_desc = "AI Analysis Only"
     elif args.scan_only:
         run_ai = False
         run_scan = True
         run_dockerfile_analysis = True
+        run_compose_analysis = False
         mode_desc = "Security Scan Only"
     else:
         # Default: run both AI and scan if both Dockerfile and image are provided
         run_ai = bool(args.dockerfile)
         run_scan = bool(args.image)
         run_dockerfile_analysis = bool(args.dockerfile)
+        run_compose_analysis = False
         mode_desc = "Full Analysis (AI + Scanner)"
     
     print(f"\n[INFO] Mode: {mode_desc}")
@@ -163,15 +192,20 @@ def main() -> None:
                 
             analyser_chain = docker_agent_prompt | Report_llm
             
-            # Load and analyze the Dockerfile
-            filecontent = load_docker_file(docker_file_path=Path(args.dockerfile))
+            # Load and analyze the file
+            if run_compose_analysis:
+                filecontent = load_docker_file(docker_file_path=Path(args.compose))
+                file_type = "docker-compose file"
+            else:
+                filecontent = load_docker_file(docker_file_path=Path(args.dockerfile))
+                file_type = "Dockerfile"
             
             if not filecontent:
-                print("Error: No Dockerfile content found.")
+                print(f"Error: No {file_type} content found.")
                 return
             
-            # Truncate Dockerfile to reduce token usage
-            truncated_content = truncate_dockerfile(filecontent, max_lines=50, max_chars=2000)
+            # Truncate content to reduce token usage
+            truncated_content = truncate_dockerfile(filecontent, max_lines=150, max_chars=4000) if run_compose_analysis else truncate_dockerfile(filecontent, max_lines=50, max_chars=2000)
             
             response = analyser_chain.invoke({"filecontent": truncated_content})
             ai_findings = analyze_security(response, compact=True, report_path=RESULTS_DIR)
@@ -184,28 +218,43 @@ def main() -> None:
     
     # Run the scanner tool
     if run_scan:
-        scan_type = "image-only" if args.image_only else "full"
+        scan_type = "compose" if run_compose_analysis else ("image-only" if args.image_only else "full")
         print(f"\n=== Running {scan_type} security scanner ===")
         try:
             from docksec.docker_scanner import DockerSecurityScanner
             
-            # Initialize the scanner
-            dockerfile_path = args.dockerfile if run_dockerfile_analysis else None
-            scanner = DockerSecurityScanner(
-                dockerfile_path, 
-                args.image, 
-                scan_only=not run_ai,
-                skip_ai_scoring=args.skip_ai_scoring
-            )
-            
-            # Run appropriate scan based on mode
-            if args.image_only:
-                # Image-only scan - skip Dockerfile analysis
-                print(f"Scanning Docker image: {args.image}")
-                results = scanner.run_image_only_scan("CRITICAL,HIGH")
+            if run_compose_analysis:
+                from docksec.compose_scanner import ComposeOrchestrator
+                orchestrator = ComposeOrchestrator(
+                    args.compose,
+                    scan_only=not run_ai,
+                    skip_ai_scoring=args.skip_ai_scoring
+                )
+                print(f"Scanning Compose file: {args.compose}")
+                results = orchestrator.run_full_scan("CRITICAL,HIGH")
+                
+                # We need a scanner instance just for scoring and reporting
+                scanner = DockerSecurityScanner(None, None, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring)
+                scanner.image_name = "Multiple Services"
+                scanner.dockerfile_path = args.compose
             else:
-                # Full scan including Dockerfile
-                results = scanner.run_full_scan("CRITICAL,HIGH")
+                # Initialize the scanner
+                dockerfile_path = args.dockerfile if run_dockerfile_analysis else None
+                scanner = DockerSecurityScanner(
+                    dockerfile_path, 
+                    args.image, 
+                    scan_only=not run_ai,
+                    skip_ai_scoring=args.skip_ai_scoring
+                )
+                
+                # Run appropriate scan based on mode
+                if args.image_only:
+                    # Image-only scan - skip Dockerfile analysis
+                    print(f"Scanning Docker image: {args.image}")
+                    results = scanner.run_image_only_scan("CRITICAL,HIGH")
+                else:
+                    # Full scan including Dockerfile
+                    results = scanner.run_full_scan("CRITICAL,HIGH")
             
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)
@@ -217,8 +266,8 @@ def main() -> None:
             # Generate all reports
             scanner.generate_all_reports(results)
             
-            # Run advanced scan if available and image is provided
-            if hasattr(scanner, 'advanced_scan') and args.image:
+            # Run advanced scan if available and image is provided (skip for compose)
+            if hasattr(scanner, 'advanced_scan') and args.image and not run_compose_analysis:
                 print("\n=== Running Advanced Scan ===")
                 scanner.advanced_scan()
             

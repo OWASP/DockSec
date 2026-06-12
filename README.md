@@ -94,6 +94,9 @@ docksec Dockerfile
 # Scan Dockerfile + Docker image
 docksec Dockerfile -i myapp:latest
 
+# Scan a Docker Compose file and all its services
+docksec --compose docker-compose.yml
+
 # Scan only a Docker image
 docksec --image-only -i myapp:latest
 
@@ -107,6 +110,7 @@ docksec Dockerfile --scan-only
 
 - **Smart Analysis**: AI explains what vulnerabilities mean for *your* specific setup.
 - **Multi-LLM Support**: Use OpenAI, Anthropic Claude (4.x), Google Gemini (1.5+), or local models via Ollama.
+- **Docker Compose Scanning**: Detect orchestration-level misconfigurations and scan all services in a compose file.
 - **Deep Integration**: Combines Trivy (vulnerabilities), Hadolint (linting), and Docker Scout.
 - **Security Scoring**: Get a 0-100 score to track your security posture over time.
 - **Centralized Reporting**: All reports are neatly organized in `~/.docksec/results/` by default.
