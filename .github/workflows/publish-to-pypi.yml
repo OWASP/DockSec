@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 2026.5.22.4)'
+        description: 'Version to release (e.g., 2026.5.22.4). Must match setup.py!'
         required: true
         type: string
 
 jobs:
-  update-version:
+  create-tag:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -25,17 +25,19 @@ jobs:
         id: set_version
         run: echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
 
-      - name: Update setup.py version
+      - name: Verify version matches setup.py
         run: |
-          sed -i 's/version=".*"/version="${{ github.event.inputs.version }}"/' setup.py
-          
-      - name: Commit and push version update
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add setup.py
-          # Only commit if there are changes
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: bump version to ${{ github.event.inputs.version }}" && git push)
+          SETUP_VERSION=$(python -c "import re; content=open('setup.py').read(); print(re.search(r'version=\"([^\"]+)\"', content).group(1))")
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          echo "setup.py version: $SETUP_VERSION"
+          echo "Input version: $INPUT_VERSION"
+          if [ "$SETUP_VERSION" != "$INPUT_VERSION" ]; then
+            echo "ERROR: Version mismatch!"
+            echo "setup.py has version $SETUP_VERSION but you requested to release $INPUT_VERSION"
+            echo "Please update setup.py via a Pull Request first."
+            exit 1
+          fi
+          echo "✅ Versions match!"
 
       - name: Create and push tag
         run: |
@@ -43,7 +45,7 @@ jobs:
           git push origin v${{ github.event.inputs.version }}
 
   publish-pypi:
-    needs: update-version
+    needs: create-tag
     runs-on: ubuntu-latest
     environment: pypi-release
     permissions:
@@ -54,7 +56,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        ref: v${{ needs.update-version.outputs.version }}
+        ref: v${{ needs.create-tag.outputs.version }}
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -75,7 +77,7 @@ jobs:
         password: ${{ secrets.PYPI_API_TOKEN }}
 
   publish-github-release:
-    needs: [update-version, publish-pypi]
+    needs: [create-tag, publish-pypi]
     runs-on: ubuntu-latest
     environment: marketplace-release
     permissions:
@@ -85,7 +87,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        ref: v${{ needs.update-version.outputs.version }}
+        ref: v${{ needs.create-tag.outputs.version }}
         
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -103,8 +105,8 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v${{ needs.update-version.outputs.version }}
-        name: Release v${{ needs.update-version.outputs.version }}
+        tag_name: v${{ needs.create-tag.outputs.version }}
+        name: Release v${{ needs.create-tag.outputs.version }}
         generate_release_notes: true
         files: |
           dist/*.tar.gz
