@@ -22,6 +22,10 @@ if [ -n "${INPUT_IMAGE}" ]; then
   ARGS+=("-i" "${INPUT_IMAGE}")
 fi
 
+if [ -n "${INPUT_COMPOSE}" ]; then
+  ARGS+=("-c" "${INPUT_COMPOSE}")
+fi
+
 if [ -n "${INPUT_OUTPUT}" ]; then
   ARGS+=("-o" "${INPUT_OUTPUT}")
 fi

@@ -13,6 +13,9 @@ inputs:
   image:
     description: 'Docker image name to scan'
     required: false
+  compose:
+    description: 'Path to docker-compose file to scan'
+    required: false
   output:
     description: 'Custom output file path'
     required: false
@@ -51,6 +54,7 @@ runs:
   env:
     INPUT_DOCKERFILE: ${{ inputs.dockerfile }}
     INPUT_IMAGE: ${{ inputs.image }}
+    INPUT_COMPOSE: ${{ inputs.compose }}
     INPUT_OUTPUT: ${{ inputs.output }}
     INPUT_OPENAI_API_KEY: ${{ inputs.openai_api_key }}
     INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
