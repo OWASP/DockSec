@@ -33,7 +33,7 @@ setup(
         "langchain-ollama==1.1.0",
         "python-dotenv==1.2.2",
         "pandas==3.0.3",
-        "tqdm==4.67.3",
+        "tqdm==4.68.2",
         "colorama==0.4.6",
         "rich==15.0.0",
         "fpdf2==2.8.7",

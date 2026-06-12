@@ -10,7 +10,7 @@ python-dotenv==1.2.2
 pandas==3.0.3
 
 # UI and progress
-tqdm==4.67.3
+tqdm==4.68.2
 colorama==0.4.6
 rich==15.0.0
 
