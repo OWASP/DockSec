@@ -116,6 +116,27 @@ docksec Dockerfile --scan-only
 
 ---
 
+## How DockSec Compares
+
+Here is a comparison of how DockSec relates to other container security tools.
+
+| Capability | DockSec | Trivy (standalone) | Snyk Container | Aikido |
+|---|---|---|---|---|
+| License and cost | Free, open source (MIT) | Free, open source (Apache 2.0) | Commercial (limited free tier) | Commercial (limited free tier) |
+| Governance | OWASP Incubator Project, vendor neutral | Open source, maintained by Aqua | Single vendor | Single vendor |
+| Detects CVEs and Dockerfile misconfigurations | Yes | Yes | Yes | Yes |
+| Contextual, line level Dockerfile remediation | Yes (line specific rewrites with explanation) | No (detection only) | Yes (base image upgrade advice, fix PRs) | Yes (AI AutoFix PRs) |
+| Runs fully offline / air gapped | Yes (local LLM via Ollama, scan only mode, no API key) | Yes for scanning (no remediation layer) | No (cloud platform) | No (hosted platform) |
+| Your image data stays on your network | Yes | Yes | No | No |
+| Bring your own LLM / model choice | Yes (OpenAI, Anthropic, Gemini, or local Ollama) | Not applicable | No (proprietary AI) | No (proprietary AI) |
+| Self hostable, no platform deployment | Yes | Yes | No | No |
+| Vendor lock in | None | None | Yes | Yes |
+| Security score (0 to 100) and multi format reports (HTML, PDF, JSON, CSV, Markdown) | Yes | Partial (machine formats, no remediation report) | Partial (dashboard reports) | Partial (dashboard reports) |
+
+DockSec is the only one of these that pairs contextual, line level Dockerfile remediation with a fully open source, OWASP governed, locally runnable design. Snyk and Aikido offer capable AI remediation, but only as commercial cloud platforms that send your data to their service. Trivy is open source and local but stops at detection and does not help you fix anything. DockSec fills the gap for developers and for regulated or air gapped teams who need both the fix guidance and full control of their data, at no cost.
+
+---
+
 ## Contributing
 
 DockSec thrives on community contributions. Whether you are a developer, designer, or security enthusiast, there are many ways to get involved:
