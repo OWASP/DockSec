@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - MYSQL_ROOT_PASSWORD=secret
+    network_mode: host
+
+  db:
+    image: postgres
+    environment:
+      - POSTGRES_PASSWORD=supersecret
+    ports:
+      - "5432:5432"

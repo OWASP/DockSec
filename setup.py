@@ -39,6 +39,7 @@ setup(
         "fpdf2==2.8.7",
         "tenacity==9.1.4",
         "setuptools>=65.0.0",
+        "ruamel.yaml>=0.18.6",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

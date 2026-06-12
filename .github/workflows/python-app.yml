@@ -54,7 +54,7 @@ jobs:
 
     - name: Run unit tests
       run: |
-        pip install pytest
+        pip install pytest pytest-mock
         pytest tests/ -v
 
     - name: Lint Python code with ruff
