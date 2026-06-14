@@ -514,6 +514,399 @@ class TestDockerSecurityScanner(unittest.TestCase):
             self.assertEqual(score, 85.5)
 
 
+    # ------------------------------------------------------------------
+    # Grype: _parse_grype_output
+    # ------------------------------------------------------------------
+
+    def _make_grype_match(self, cve_id="CVE-2024-1234", severity="High",
+                          pkg_name="libssl", version="1.0.0"):
+        """Return a minimal Grype match dict."""
+        return {
+            "vulnerability": {
+                "id": cve_id,
+                "severity": severity,
+                "description": "A test vulnerability",
+                "urls": [f"https://nvd.nist.gov/vuln/detail/{cve_id}"],
+                "cvss": [{"version": "3.1", "metrics": {"baseScore": 7.5}}],
+                "fix": {"state": "fixed"},
+            },
+            "artifact": {
+                "name": pkg_name,
+                "version": version,
+                "type": "deb",
+                "locations": [{"path": "/usr/lib/libssl.so"}],
+            },
+        }
+
+    def test_parse_grype_output_with_vulns(self):
+        """Test _parse_grype_output with a normal Grype JSON payload."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        payload = json.dumps({"matches": [self._make_grype_match()]})
+
+        results = scanner._parse_grype_output(payload)
+        self.assertEqual(len(results), 1)
+        vuln = results[0]
+        self.assertEqual(vuln["VulnerabilityID"], "CVE-2024-1234")
+        self.assertEqual(vuln["Severity"], "HIGH")
+        self.assertEqual(vuln["PkgName"], "libssl")
+        self.assertEqual(vuln["InstalledVersion"], "1.0.0")
+        self.assertEqual(vuln["Status"], "fixed")
+        self.assertAlmostEqual(vuln["CVSS"], 7.5)
+        self.assertEqual(vuln["sources"], ["grype"])
+
+    def test_parse_grype_output_empty_matches(self):
+        """Test _parse_grype_output with no matches."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        payload = json.dumps({"matches": []})
+        results = scanner._parse_grype_output(payload)
+        self.assertEqual(results, [])
+
+    def test_parse_grype_output_severity_filter(self):
+        """Test that _parse_grype_output filters by severity."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        payload = json.dumps({
+            "matches": [
+                self._make_grype_match(cve_id="CVE-HIGH", severity="High"),
+                self._make_grype_match(cve_id="CVE-LOW", severity="Low"),
+            ]
+        })
+
+        results = scanner._parse_grype_output(payload, severity_filter={"HIGH"})
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["VulnerabilityID"], "CVE-HIGH")
+
+    def test_parse_grype_output_invalid_json(self):
+        """Test that _parse_grype_output handles invalid JSON gracefully."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        results = scanner._parse_grype_output("not valid json")
+        self.assertEqual(results, [])
+
+    # ------------------------------------------------------------------
+    # Grype: _deduplicate_vulnerabilities
+    # ------------------------------------------------------------------
+
+    def test_deduplicate_vulnerabilities_no_overlap(self):
+        """Test deduplication when Trivy and Grype find different CVEs."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        trivy = [{"VulnerabilityID": "CVE-001", "Severity": "HIGH"}]
+        grype = [{"VulnerabilityID": "CVE-002", "Severity": "CRITICAL", "sources": ["grype"]}]
+
+        merged = scanner._deduplicate_vulnerabilities(trivy, grype)
+        ids = {v["VulnerabilityID"] for v in merged}
+        self.assertEqual(ids, {"CVE-001", "CVE-002"})
+
+    def test_deduplicate_vulnerabilities_with_overlap(self):
+        """Test deduplication merges sources when both scanners find the same CVE."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        trivy = [{"VulnerabilityID": "CVE-001", "Severity": "HIGH"}]
+        grype = [{"VulnerabilityID": "CVE-001", "Severity": "HIGH", "sources": ["grype"]}]
+
+        merged = scanner._deduplicate_vulnerabilities(trivy, grype)
+        self.assertEqual(len(merged), 1)
+        self.assertIn("trivy", merged[0]["sources"])
+        self.assertIn("grype", merged[0]["sources"])
+
+    def test_deduplicate_vulnerabilities_empty_inputs(self):
+        """Test deduplication with empty lists."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        self.assertEqual(scanner._deduplicate_vulnerabilities([], []), [])
+        trivy = [{"VulnerabilityID": "CVE-001", "Severity": "HIGH"}]
+        result = scanner._deduplicate_vulnerabilities(trivy, [])
+        self.assertEqual(len(result), 1)
+
+    # ------------------------------------------------------------------
+    # Grype: scan_image_grype
+    # ------------------------------------------------------------------
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_scan_image_grype_success(self, mock_run):
+        """Test a successful Grype scan."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        grype_json = json.dumps({
+            "matches": [{
+                "vulnerability": {
+                    "id": "CVE-2024-9999",
+                    "severity": "Critical",
+                    "description": "Test",
+                    "urls": [],
+                    "cvss": [],
+                    "fix": {"state": "unknown"},
+                },
+                "artifact": {
+                    "name": "openssl",
+                    "version": "1.1.1",
+                    "type": "deb",
+                    "locations": [],
+                },
+            }]
+        })
+        mock_run.return_value = Mock(returncode=0, stdout=grype_json, stderr="")
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = "test:latest"
+
+        success, results = scanner.scan_image_grype()
+        self.assertTrue(success)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["VulnerabilityID"], "CVE-2024-9999")
+        self.assertEqual(results[0]["Severity"], "CRITICAL")
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_scan_image_grype_failure(self, mock_run):
+        """Test Grype scan failure returns (False, None)."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        mock_run.return_value = Mock(returncode=1, stdout="", stderr="grype error")
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = "test:latest"
+
+        success, results = scanner.scan_image_grype()
+        self.assertFalse(success)
+        self.assertIsNone(results)
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_run_full_scan_grype_mode(self, mock_run):
+        """Test run_full_scan routes correctly for scanner='grype'."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        grype_json = json.dumps({
+            "matches": [{
+                "vulnerability": {
+                    "id": "CVE-2024-0001",
+                    "severity": "High",
+                    "description": "",
+                    "urls": [],
+                    "cvss": [],
+                    "fix": {"state": "unknown"},
+                },
+                "artifact": {
+                    "name": "curl", "version": "7.0", "type": "deb", "locations": [],
+                },
+            }]
+        })
+
+        with patch.object(DockerSecurityScanner, 'scan_dockerfile', return_value=(True, None)), \
+             patch.object(DockerSecurityScanner, 'scan_image_grype',
+                          return_value=(True, [{"VulnerabilityID": "CVE-2024-0001",
+                                                "Severity": "HIGH", "sources": ["grype"]}])):
+            scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+            scanner.image_name = "test:latest"
+            scanner.dockerfile_path = "Dockerfile"
+            scanner.use_cache = False
+            scanner.scanner = "grype"
+            scanner._grype_available = True
+
+            results = scanner.run_full_scan()
+
+        self.assertEqual(len(results['json_data']), 1)
+        self.assertEqual(results['json_data'][0]['sources'], ["grype"])
+
+    # ------------------------------------------------------------------
+    # Grype title extraction
+    # ------------------------------------------------------------------
+
+    def test_parse_grype_output_title_from_description(self):
+        """_parse_grype_output derives title from first sentence of description."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        match = self._make_grype_match()
+        match["vulnerability"]["description"] = "Buffer overflow in libssl. Additional details here."
+        payload = json.dumps({"matches": [match]})
+
+        results = scanner._parse_grype_output(payload)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["Title"], "Buffer overflow in libssl")
+
+    def test_parse_grype_output_title_fallback_to_id(self):
+        """_parse_grype_output falls back to CVE ID when description is empty."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        match = self._make_grype_match(cve_id="CVE-2024-5678")
+        match["vulnerability"]["description"] = ""
+        payload = json.dumps({"matches": [match]})
+
+        results = scanner._parse_grype_output(payload)
+        self.assertEqual(results[0]["Title"], "CVE-2024-5678")
+
+    # ------------------------------------------------------------------
+    # Report generator: _build_scanner_coverage
+    # ------------------------------------------------------------------
+
+    def test_build_scanner_coverage_trivy_only(self):
+        """Coverage stats for Trivy-only results."""
+        from docksec.report_generator import ReportGenerator
+
+        gen = ReportGenerator.__new__(ReportGenerator)
+        vulns = [
+            {"VulnerabilityID": "CVE-001"},  # no sources tag → trivy
+            {"VulnerabilityID": "CVE-002", "sources": ["trivy"]},
+        ]
+        cov = gen._build_scanner_coverage(vulns)
+        self.assertEqual(cov["total"], 2)
+        self.assertEqual(cov["trivy_only"], 2)
+        self.assertEqual(cov["grype_only"], 0)
+        self.assertEqual(cov["confirmed_by_both"], 0)
+        self.assertEqual(cov["scanners_used"], ["trivy"])
+
+    def test_build_scanner_coverage_mixed(self):
+        """Coverage stats when both scanners contribute."""
+        from docksec.report_generator import ReportGenerator
+
+        gen = ReportGenerator.__new__(ReportGenerator)
+        vulns = [
+            {"VulnerabilityID": "CVE-001", "sources": ["trivy"]},
+            {"VulnerabilityID": "CVE-002", "sources": ["grype"]},
+            {"VulnerabilityID": "CVE-003", "sources": ["trivy", "grype"]},
+        ]
+        cov = gen._build_scanner_coverage(vulns)
+        self.assertEqual(cov["total"], 3)
+        self.assertEqual(cov["trivy_only"], 1)
+        self.assertEqual(cov["grype_only"], 1)
+        self.assertEqual(cov["confirmed_by_both"], 1)
+        self.assertIn("trivy", cov["scanners_used"])
+        self.assertIn("grype", cov["scanners_used"])
+
+    def test_build_scanner_coverage_empty(self):
+        """Coverage stats for an empty vulnerability list."""
+        from docksec.report_generator import ReportGenerator
+
+        gen = ReportGenerator.__new__(ReportGenerator)
+        cov = gen._build_scanner_coverage([])
+        self.assertEqual(cov["total"], 0)
+        self.assertEqual(cov["confirmed_by_both"], 0)
+
+    def test_get_scanner_badge_html_trivy(self):
+        """Badge for a Trivy-only vuln."""
+        from docksec.report_generator import ReportGenerator
+
+        gen = ReportGenerator.__new__(ReportGenerator)
+        badge = gen._get_scanner_badge_html({"sources": ["trivy"]})
+        self.assertIn("scanner-trivy", badge)
+        self.assertIn("Trivy", badge)
+
+    def test_get_scanner_badge_html_grype(self):
+        """Badge for a Grype-only vuln."""
+        from docksec.report_generator import ReportGenerator
+
+        gen = ReportGenerator.__new__(ReportGenerator)
+        badge = gen._get_scanner_badge_html({"sources": ["grype"]})
+        self.assertIn("scanner-grype", badge)
+        self.assertIn("Grype", badge)
+
+    def test_get_scanner_badge_html_both(self):
+        """Badge for a vuln confirmed by both scanners."""
+        from docksec.report_generator import ReportGenerator
+
+        gen = ReportGenerator.__new__(ReportGenerator)
+        badge = gen._get_scanner_badge_html({"sources": ["trivy", "grype"]})
+        self.assertIn("scanner-both", badge)
+        self.assertIn("Both", badge)
+
+    # ------------------------------------------------------------------
+    # DOCKSEC_SCANNER env var resolution
+    # ------------------------------------------------------------------
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.get_llm')
+    def test_init_scanner_param_default(self, mock_llm, mock_subprocess):
+        """DockerSecurityScanner defaults to scanner='trivy'."""
+        mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
+        mock_llm.return_value = Mock()
+
+        dockerfile = self.create_test_dockerfile()
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner(dockerfile, None, scan_only=True)
+        self.assertEqual(scanner.scanner, "trivy")
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.get_llm')
+    def test_init_scanner_param_grype_unavailable_falls_back(self, mock_llm, mock_subprocess):
+        """When scanner='grype' but grype is not installed, falls back to trivy."""
+        # _check_tools() calls: trivy --version, hadolint --version (for dockerfile_path)
+        # Then grype version check.
+        mock_subprocess.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),   # trivy --version
+            Mock(returncode=0, stdout="", stderr=""),   # hadolint --version
+            FileNotFoundError(),                         # grype version check
+        ]
+        mock_llm.return_value = Mock()
+
+        dockerfile = self.create_test_dockerfile()
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner(dockerfile, None, scan_only=True, scanner="grype")
+        # Should silently fall back to trivy
+        self.assertEqual(scanner.scanner, "trivy")
+        self.assertFalse(scanner._grype_available)
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    @patch('docksec.docker_scanner.get_llm')
+    def test_init_scanner_param_invalid_raises(self, mock_llm, mock_subprocess):
+        """DockerSecurityScanner raises ValueError for unknown scanner name."""
+        mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
+        mock_llm.return_value = Mock()
+
+        dockerfile = self.create_test_dockerfile()
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        with self.assertRaises(ValueError):
+            DockerSecurityScanner(dockerfile, None, scan_only=True, scanner="unknown_tool")
+
+    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_dockerfile')
+    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image')
+    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image_json')
+    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image_grype')
+    def test_run_full_scan_all_mode_deduplication(
+        self, mock_grype, mock_json, mock_image, mock_dockerfile
+    ):
+        """Test run_full_scan deduplicates when scanner='all'."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        mock_dockerfile.return_value = (True, None)
+        mock_image.return_value = (True, "output")
+        mock_json.return_value = (True, [
+            {"VulnerabilityID": "CVE-SHARED", "Severity": "HIGH"},
+            {"VulnerabilityID": "CVE-TRIVY-ONLY", "Severity": "HIGH"},
+        ])
+        mock_grype.return_value = (True, [
+            {"VulnerabilityID": "CVE-SHARED", "Severity": "HIGH", "sources": ["grype"]},
+            {"VulnerabilityID": "CVE-GRYPE-ONLY", "Severity": "CRITICAL", "sources": ["grype"]},
+        ])
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = "test:latest"
+        scanner.dockerfile_path = "Dockerfile"
+        scanner.use_cache = False
+        scanner.scanner = "all"
+        scanner._grype_available = True
+
+        results = scanner.run_full_scan()
+        ids = {v["VulnerabilityID"] for v in results['json_data']}
+        self.assertEqual(ids, {"CVE-SHARED", "CVE-TRIVY-ONLY", "CVE-GRYPE-ONLY"})
+        shared = next(v for v in results['json_data'] if v["VulnerabilityID"] == "CVE-SHARED")
+        self.assertIn("trivy", shared["sources"])
+        self.assertIn("grype", shared["sources"])
+
+
 if __name__ == '__main__':
     unittest.main()
 

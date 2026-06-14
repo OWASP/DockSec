@@ -327,10 +327,11 @@ class ComposeScanner:
         return self.data.get('services', {})
 
 class ComposeOrchestrator:
-    def __init__(self, compose_path: str, scan_only: bool = False, skip_ai_scoring: bool = False):
+    def __init__(self, compose_path: str, scan_only: bool = False, skip_ai_scoring: bool = False, scanner: str = "trivy"):
         self.compose_path = compose_path
         self.scan_only = scan_only
         self.skip_ai_scoring = skip_ai_scoring
+        self.vuln_scanner = scanner
         self.scanner = ComposeScanner(compose_path)
         
     def run_full_scan(self, severity: str = "CRITICAL,HIGH") -> Dict:
@@ -389,7 +390,8 @@ class ComposeOrchestrator:
                     dockerfile_path=dockerfile_path,
                     image_name=image_name,
                     scan_only=self.scan_only,
-                    skip_ai_scoring=self.skip_ai_scoring
+                    skip_ai_scoring=self.skip_ai_scoring,
+                    scanner=self.vuln_scanner,
                 )
                 
                 # Disable cache for service scans to ensure fresh results?

@@ -102,6 +102,7 @@ def test_csv_header_row_is_correct(tmp_path, sample_vulnerabilities, sample_scan
         "Status",
         "Target",
         "URL",
+        "Sources",
     ]
     assert header == expected
 
@@ -141,6 +142,7 @@ def test_csv_empty_input_header_only(tmp_path, sample_scan_info):
         "Status",
         "Target",
         "URL",
+        "Sources",
     ]
     assert rows[0] == expected
 

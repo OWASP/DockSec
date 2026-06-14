@@ -347,7 +347,82 @@
         .config-list.low li {
             border-left-color: #f1c40f;
         }
-        
+
+        /* Scanner badges */
+        .scanner-badge {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .scanner-trivy {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .scanner-grype {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .scanner-both {
+            background: #fce4ec;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+        }
+
+        /* Scanner coverage section */
+        .coverage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .coverage-item {
+            text-align: center;
+            padding: 20px 12px;
+            border-radius: 10px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-top: 4px solid #ccc;
+        }
+
+        .coverage-total { border-top-color: #607d8b; }
+        .coverage-trivy { border-top-color: #1565c0; }
+        .coverage-grype { border-top-color: #2e7d32; }
+        .coverage-both  { border-top-color: #c62828; }
+
+        .coverage-count {
+            font-size: 2em;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .coverage-total .coverage-count { color: #607d8b; }
+        .coverage-trivy .coverage-count { color: #1565c0; }
+        .coverage-grype .coverage-count { color: #2e7d32; }
+        .coverage-both  .coverage-count { color: #c62828; }
+
+        .coverage-label {
+            font-size: 0.8em;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .scanners-used-row {
+            margin-top: 15px;
+            font-size: 0.92em;
+            color: #444;
+        }
+
         @media (max-width: 768px) {
             .container {
                 margin: 10px;
@@ -437,6 +512,9 @@
                 <h2>Vulnerability Summary</h2>
                 {{VULNERABILITY_SUMMARY}}
             </div>
+
+            <!-- Scanner Coverage Section -->
+            {{SCANNER_COVERAGE_SECTION}}
 
             <!-- Detailed Vulnerabilities Section -->
             {{DETAILED_VULNERABILITIES_SECTION}}

@@ -28,7 +28,7 @@
 
 ## What is DockSec?
 
-DockSec is an **OWASP Incubator Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Hadolint, Docker Scout) with advanced AI to provide **context-aware security analysis**. 
+DockSec is an **OWASP Incubator Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Grype, Hadolint, Docker Scout) with advanced AI to provide **context-aware security analysis**.
 
 Instead of overwhelming you with a list of 200+ CVEs, DockSec:
 
@@ -36,6 +36,7 @@ Instead of overwhelming you with a list of 200+ CVEs, DockSec:
 - **Explains** vulnerabilities in plain English, not just security jargon.
 - **Suggests** specific, line-by-line fixes for your Dockerfile.
 - **Generates** professional, interactive security reports for your team.
+- **Cross-validates** findings across multiple scanners so you catch what one scanner misses.
 
 Think of it as having a security expert sitting right next to you, reviewing your Dockerfiles in real-time.
 
@@ -49,10 +50,10 @@ Think of it as having a security expert sitting right next to you, reviewing you
 </div>
 
 DockSec follows a robust four-stage pipeline:
-1. **Scan**: Runs Trivy, Hadolint, and Docker Scout locally on your environment.
-2. **Analyze**: AI correlates findings across all scanners to remove noise and assess real-world impact.
+1. **Scan**: Runs Trivy and/or Grype for CVE detection, Hadolint for Dockerfile linting, and Docker Scout for base-image analysis — all locally on your environment.
+2. **Analyze**: AI correlates findings across all scanners to remove noise and assess real-world impact. When running both Trivy and Grype, results are automatically deduplicated and cross-validated.
 3. **Recommend**: Generates human-readable explanations and specific remediation steps.
-4. **Report**: Exports actionable results in JSON, PDF, HTML, or Markdown formats.
+4. **Report**: Exports actionable results in JSON, PDF, HTML, or CSV formats — each report includes a **Scanner Coverage** section showing exactly which scanner(s) flagged each CVE.
 
 ---
 
@@ -87,6 +88,9 @@ Integrate DockSec into your GitHub Actions workflow:
 # Install DockSec
 pip install docksec
 
+# Install all required external tools (Trivy, Hadolint, Grype)
+docksec-setup
+
 # Scan a Dockerfile (AI-powered)
 # Reports will be saved to ~/.docksec/results/
 docksec Dockerfile
@@ -104,18 +108,52 @@ docksec --image-only -i myapp:latest
 docksec Dockerfile --scan-only
 ```
 
+### Choosing a Vulnerability Scanner
+
+DockSec supports three scanner modes via the `--scanner` flag:
+
+```bash
+# Default: use Trivy only (fast, widely adopted)
+docksec --image-only -i myapp:latest --scanner trivy
+
+# Use Grype only (Anchore's scanner, often finds additional CVEs)
+docksec --image-only -i myapp:latest --scanner grype
+
+# Use both scanners and deduplicate results (maximum coverage)
+docksec --image-only -i myapp:latest --scanner all
+
+# Works with full scans too
+docksec Dockerfile -i myapp:latest --scanner all
+
+# Works with Docker Compose
+docksec --compose docker-compose.yml --scanner all
+```
+
+You can also set the default scanner via an environment variable (useful in CI/CD):
+
+```bash
+# Set a persistent default — no need to pass --scanner on every command
+export DOCKSEC_SCANNER=all
+docksec --image-only -i myapp:latest
+```
+
+> **Why use `--scanner all`?**
+> Trivy and Grype use different vulnerability databases and detection methods. In practice they each find CVEs the other misses. Running both and deduplicating gives you the highest confidence results — CVEs flagged by both scanners are shown with a **"Both"** badge in reports, making them the highest-priority findings to fix.
+
 ---
 
 ## Features
 
 - **Smart Analysis**: AI explains what vulnerabilities mean for *your* specific setup.
+- **Dual Vulnerability Scanner**: Choose Trivy, Grype, or run **both at once** (`--scanner all`) for maximum CVE coverage with automatic deduplication.
+- **Scanner Coverage Reports**: Every report includes a breakdown of which scanner(s) found each CVE — CVEs confirmed by both scanners are highlighted as highest priority.
 - **Multi-LLM Support**: Use OpenAI, Anthropic Claude (4.x), Google Gemini (1.5+), or local models via Ollama.
 - **Docker Compose Scanning**: Detect orchestration-level misconfigurations and scan all services in a compose file.
-- **Deep Integration**: Combines Trivy (vulnerabilities), Hadolint (linting), and Docker Scout.
+- **Deep Integration**: Combines Trivy, Grype, Hadolint (linting), and Docker Scout.
 - **Security Scoring**: Get a 0-100 score to track your security posture over time.
 - **Centralized Reporting**: All reports are neatly organized in `~/.docksec/results/` by default.
-- **Rich Formats**: Professional exports in HTML (interactive), PDF, JSON, and CSV.
-- **CI/CD Ready**: Designed for easy integration into GitHub Actions and build pipelines.
+- **Rich Formats**: Professional exports in HTML (interactive, with scanner badges), PDF, JSON, and CSV.
+- **CI/CD Ready**: Designed for easy integration into GitHub Actions and build pipelines. Set `DOCKSEC_SCANNER=all` in your environment for maximum coverage with no code changes.
 - **GitHub Action**: Available on the GitHub Marketplace for automated security scans.
 
 ---
@@ -129,15 +167,16 @@ Here is a comparison of how DockSec relates to other container security tools.
 | License and cost | Free, open source (MIT) | Free, open source (Apache 2.0) | Commercial (limited free tier) | Commercial (limited free tier) |
 | Governance | OWASP Incubator Project, vendor neutral | Open source, maintained by Aqua | Single vendor | Single vendor |
 | Detects CVEs and Dockerfile misconfigurations | Yes | Yes | Yes | Yes |
+| Dual scanner (Trivy + Grype) with deduplication | Yes (`--scanner all`) | No | No | No |
 | Contextual, line level Dockerfile remediation | Yes (line specific rewrites with explanation) | No (detection only) | Yes (base image upgrade advice, fix PRs) | Yes (AI AutoFix PRs) |
 | Runs fully offline / air gapped | Yes (local LLM via Ollama, scan only mode, no API key) | Yes for scanning (no remediation layer) | No (cloud platform) | No (hosted platform) |
 | Your image data stays on your network | Yes | Yes | No | No |
 | Bring your own LLM / model choice | Yes (OpenAI, Anthropic, Gemini, or local Ollama) | Not applicable | No (proprietary AI) | No (proprietary AI) |
 | Self hostable, no platform deployment | Yes | Yes | No | No |
 | Vendor lock in | None | None | Yes | Yes |
-| Security score (0 to 100) and multi format reports (HTML, PDF, JSON, CSV, Markdown) | Yes | Partial (machine formats, no remediation report) | Partial (dashboard reports) | Partial (dashboard reports) |
+| Security score (0 to 100) and multi format reports (HTML, PDF, JSON, CSV) | Yes | Partial (machine formats, no remediation report) | Partial (dashboard reports) | Partial (dashboard reports) |
 
-DockSec is the only one of these that pairs contextual, line level Dockerfile remediation with a fully open source, OWASP governed, locally runnable design. Snyk and Aikido offer capable AI remediation, but only as commercial cloud platforms that send your data to their service. Trivy is open source and local but stops at detection and does not help you fix anything. DockSec fills the gap for developers and for regulated or air gapped teams who need both the fix guidance and full control of their data, at no cost.
+DockSec is the only one of these that pairs contextual, line level Dockerfile remediation with a fully open source, OWASP governed, locally runnable design. Snyk and Aikido offer capable AI remediation, but only as commercial cloud platforms that send your data to their service. Trivy is open source and local but stops at detection and does not help you fix anything. DockSec fills the gap for developers and for regulated or air gapped teams who need both the fix guidance and full control of their data, at no cost. With `--scanner all`, DockSec runs both Trivy and Grype and automatically deduplicates the results — giving you broader CVE coverage than either scanner alone, without duplicates or extra noise.
 
 ---
 

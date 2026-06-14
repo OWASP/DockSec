@@ -53,10 +53,18 @@ def main() -> None:
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-haiku-4-5, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
     parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
+    parser.add_argument('--scanner', choices=['trivy', 'grype', 'all'], default=None,
+                        help='Vulnerability scanner to use: trivy (default), grype, or all (both, deduplicated). '
+                             'Can also be set via DOCKSEC_SCANNER environment variable.')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
     
     args = parser.parse_args()
-    
+
+    # Resolve --scanner: CLI flag > DOCKSEC_SCANNER env var > default "trivy"
+    if args.scanner is None:
+        env_scanner = os.environ.get("DOCKSEC_SCANNER", "trivy").lower()
+        args.scanner = env_scanner if env_scanner in ("trivy", "grype", "all") else "trivy"
+
     # Set provider and model from CLI args if provided (overrides env vars)
     if args.provider:
         os.environ["LLM_PROVIDER"] = args.provider
@@ -151,6 +159,9 @@ def main() -> None:
     from docksec.config_manager import get_config
     from docksec.enums import LLMProvider
     print(f"[INFO] Reports will be saved to: {RESULTS_DIR}")
+    if run_scan:
+        scanner_label = {"trivy": "Trivy", "grype": "Grype", "all": "Trivy + Grype"}.get(args.scanner, args.scanner)
+        print(f"[INFO] Vulnerability scanner: {scanner_label}")
     if run_ai:
         config = get_config()
         print(f"[INFO] AI Provider: {config.llm_provider}")
@@ -223,7 +234,8 @@ def main() -> None:
                 orchestrator = ComposeOrchestrator(
                     args.compose,
                     scan_only=not run_ai,
-                    skip_ai_scoring=args.skip_ai_scoring
+                    skip_ai_scoring=args.skip_ai_scoring,
+                    scanner=args.scanner,
                 )
                 print(f"Scanning Compose file: {args.compose}")
                 results = orchestrator.run_full_scan("CRITICAL,HIGH")
@@ -236,10 +248,11 @@ def main() -> None:
                 # Initialize the scanner
                 dockerfile_path = None if args.image_only else args.dockerfile
                 scanner = DockerSecurityScanner(
-                    dockerfile_path, 
-                    args.image, 
+                    dockerfile_path,
+                    args.image,
                     scan_only=not run_ai,
-                    skip_ai_scoring=args.skip_ai_scoring
+                    skip_ai_scoring=args.skip_ai_scoring,
+                    scanner=args.scanner,
                 )
                 
                 # Run appropriate scan based on mode

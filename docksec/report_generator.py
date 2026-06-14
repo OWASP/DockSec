@@ -95,6 +95,7 @@ class ReportGenerator:
         logger.info(f"Generating JSON report: {output_file}")
 
         json_results = results.get("json_data", [])
+        coverage = self._build_scanner_coverage(json_results)
         report_data = {
             "scan_info": {
                 "image": self.image_name,
@@ -104,9 +105,11 @@ class ReportGenerator:
                 ),
                 "analysis_score": self.analysis_score,
                 "scan_mode": results.get("scan_mode", "full"),
+                "scanners_used": coverage["scanners_used"],
             },
             "vulnerabilities": json_results,
             "severity_counts": self._count_by_severity(json_results),
+            "scanner_coverage": coverage,
         }
         
         # Add AI findings if available
@@ -158,6 +161,7 @@ class ReportGenerator:
                 "Status": "Status",
                 "Target": "Target",
                 "PrimaryURL": "URL",
+                "sources": "Sources",
             }
 
             with open(output_file, "w", newline="") as csvfile:
@@ -167,7 +171,13 @@ class ReportGenerator:
                 writer.writeheader()
 
                 for vuln in vulnerabilities:
-                    row = {header_mapping[k]: vuln.get(k, "") for k in header_mapping}
+                    row = {}
+                    for internal_key, csv_header in header_mapping.items():
+                        value = vuln.get(internal_key, "")
+                        # Serialize list fields (e.g. sources) to comma-separated string
+                        if isinstance(value, list):
+                            value = ",".join(str(x) for x in value)
+                        row[csv_header] = value
                     writer.writerow(row)
 
             logger.info(
@@ -619,6 +629,7 @@ class ReportGenerator:
             template_vars["VULNERABILITY_SUMMARY"] = (
                 '<div class="no-issues">No vulnerabilities found</div>'
             )
+            template_vars["SCANNER_COVERAGE_SECTION"] = ""
             template_vars["DETAILED_VULNERABILITIES_SECTION"] = ""
         else:
             severity_counts = self._count_by_severity(vulnerabilities)
@@ -647,7 +658,12 @@ class ReportGenerator:
 
             template_vars["VULNERABILITY_SUMMARY"] = severity_html
 
-            # Detailed vulnerabilities table
+            # Scanner Coverage Section
+            template_vars["SCANNER_COVERAGE_SECTION"] = self._build_scanner_coverage_html(
+                vulnerabilities
+            )
+
+            # Detailed vulnerabilities table — includes Scanner column
             table_html = """
             <div class="section">
                 <h2>Detailed Vulnerabilities</h2>
@@ -661,6 +677,7 @@ class ReportGenerator:
                             <th>Title</th>
                             <th>CVSS</th>
                             <th>Status</th>
+                            <th>Scanner</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -687,6 +704,8 @@ class ReportGenerator:
                         else str(cvss_score)
                     )
 
+                scanner_badge = self._get_scanner_badge_html(vuln)
+
                 table_html += f"""
                         <tr>
                             <td><strong>{self._escape_html(vuln.get('VulnerabilityID', 'N/A'))}</strong></td>
@@ -696,6 +715,7 @@ class ReportGenerator:
                             <td>{self._escape_html((vuln.get('Title', '')[:80] + '...') if len(vuln.get('Title', '')) > 80 else vuln.get('Title', 'N/A'))}</td>
                             <td>{cvss_score}</td>
                             <td><span class="status-badge {status_class}">{status}</span></td>
+                            <td>{scanner_badge}</td>
                         </tr>
                 """
 
@@ -730,6 +750,136 @@ class ReportGenerator:
         if not text:
             return ""
         return html.escape(str(text), quote=True)
+
+    def _build_scanner_coverage(self, vulnerabilities: List[Dict]) -> Dict:
+        """
+        Compute scanner coverage statistics from the vulnerability list.
+
+        Args:
+            vulnerabilities: Normalized vulnerability dicts (may contain a ``sources`` field)
+
+        Returns:
+            Dictionary with keys: total, trivy_only, grype_only, confirmed_by_both, scanners_used
+        """
+        trivy_only = 0
+        grype_only = 0
+        both = 0
+        scanners_seen: set = set()
+
+        for v in vulnerabilities:
+            sources = v.get("sources")
+            if not sources:
+                # No source tag → assumed to be from Trivy (backward compat)
+                trivy_only += 1
+                scanners_seen.add("trivy")
+                continue
+
+            if isinstance(sources, str):
+                sources = [s.strip().lower() for s in sources.split(",")]
+            else:
+                sources = [s.lower() for s in sources]
+
+            sources_set = set(sources)
+            scanners_seen.update(sources_set)
+
+            has_trivy = "trivy" in sources_set
+            has_grype = "grype" in sources_set
+
+            if has_trivy and has_grype:
+                both += 1
+            elif has_grype:
+                grype_only += 1
+            else:
+                trivy_only += 1
+
+        return {
+            "total": len(vulnerabilities),
+            "trivy_only": trivy_only,
+            "grype_only": grype_only,
+            "confirmed_by_both": both,
+            "scanners_used": sorted(list(scanners_seen)) if scanners_seen else ["trivy"],
+        }
+
+    def _build_scanner_coverage_html(self, vulnerabilities: List[Dict]) -> str:
+        """
+        Build the HTML Scanner Coverage section for the report.
+
+        Args:
+            vulnerabilities: Normalized vulnerability dicts
+
+        Returns:
+            HTML string for the scanner coverage section, or empty string if no vulns
+        """
+        coverage = self._build_scanner_coverage(vulnerabilities)
+        scanners_display = " + ".join(s.capitalize() for s in coverage["scanners_used"])
+
+        if not vulnerabilities:
+            return ""
+
+        # Only show detailed grid when more than one scanner was used
+        multi_scanner = len(coverage["scanners_used"]) > 1
+
+        grid_html = ""
+        if multi_scanner:
+            grid_html = f"""
+            <div class="coverage-grid">
+                <div class="coverage-item coverage-total">
+                    <div class="coverage-count">{coverage["total"]}</div>
+                    <div class="coverage-label">Total CVEs</div>
+                </div>
+                <div class="coverage-item coverage-trivy">
+                    <div class="coverage-count">{coverage["trivy_only"]}</div>
+                    <div class="coverage-label">Trivy Only</div>
+                </div>
+                <div class="coverage-item coverage-grype">
+                    <div class="coverage-count">{coverage["grype_only"]}</div>
+                    <div class="coverage-label">Grype Only</div>
+                </div>
+                <div class="coverage-item coverage-both">
+                    <div class="coverage-count">{coverage["confirmed_by_both"]}</div>
+                    <div class="coverage-label">Confirmed by Both</div>
+                </div>
+            </div>
+            """
+
+        return f"""
+        <div class="section" style="border-left-color: #9b59b6;">
+            <h2>Scanner Coverage</h2>
+            <p class="scanners-used-row">
+                Scanners used: <strong>{self._escape_html(scanners_display)}</strong>
+            </p>
+            {grid_html}
+        </div>
+        """
+
+    def _get_scanner_badge_html(self, vuln: Dict) -> str:
+        """
+        Return an HTML scanner badge for a single vulnerability row.
+
+        Args:
+            vuln: Vulnerability dict (may contain a ``sources`` field)
+
+        Returns:
+            HTML span string for the scanner badge
+        """
+        sources = vuln.get("sources")
+        if not sources:
+            return '<span class="scanner-badge scanner-trivy">Trivy</span>'
+
+        if isinstance(sources, str):
+            sources = [s.strip().lower() for s in sources.split(",")]
+        else:
+            sources = [s.lower() for s in sources]
+
+        sources_set = set(sources)
+        has_trivy = "trivy" in sources_set
+        has_grype = "grype" in sources_set
+
+        if has_trivy and has_grype:
+            return '<span class="scanner-badge scanner-both">Both</span>'
+        if has_grype:
+            return '<span class="scanner-badge scanner-grype">Grype</span>'
+        return '<span class="scanner-badge scanner-trivy">Trivy</span>'
 
     def _count_by_severity(self, vulnerabilities: List[Dict]) -> Dict[str, int]:
         """
