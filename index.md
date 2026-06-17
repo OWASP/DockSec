@@ -2,12 +2,12 @@
 layout: col-sidebar
 title: OWASP DockSec
 tags: docksec
-level: 2
+level: 3
 type: documentation
 ---
 
 <p align="center">
-  <a href="https://owasp.org/DockSec/"><img src="https://img.shields.io/badge/Incubator-blue?&label=level&style=for-the-badge" alt="OWASP Incubator"></a>
+  <a href="https://owasp.org/DockSec/"><img src="https://img.shields.io/badge/Lab-blue?&label=level&style=for-the-badge" alt="OWASP Lab"></a>
   <a href="https://owasp.org/DockSec/"><img src="https://img.shields.io/badge/Code-blue?label=type&style=for-the-badge" alt="OWASP Code"></a>
   <a href="https://owasp.slack.com/archives/C0APXGCUW7M"><img src="https://img.shields.io/badge/%23project--docksec-blue?label=slack&logoColor=white&style=for-the-badge" alt="Slack"></a>
   <a href="https://github.com/OWASP/DockSec/actions"><img src="https://img.shields.io/github/actions/workflow/status/OWASP/DockSec/python-app.yml?branch=main&style=for-the-badge&label=Build&color=blue" alt="Build Status"></a>
@@ -47,7 +47,7 @@ type: documentation
 
 ## What is DockSec?
 
-DockSec is an **OWASP Incubator Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Hadolint, Docker Scout) with advanced AI to provide **context-aware security analysis**. 
+DockSec is an **OWASP Lab Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Hadolint, Docker Scout) with advanced AI to provide **context-aware security analysis**. 
 
 Instead of overwhelming you with a list of 200+ CVEs, DockSec:
 

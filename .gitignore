@@ -50,6 +50,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.vscode/
 cover/
 
 # Translations
@@ -195,3 +196,6 @@ CURSOR_CONFIGURATION.md
 
 # Claude Code project instructions (local only, not for public repository)
 CLAUDE.md
+
+# macOS
+.DS_Store

@@ -1,6 +1,6 @@
 <div align="center">
 
-[![OWASP](https://img.shields.io/badge/Incubator-blue?&label=level&style=for-the-badge)](https://owasp.org/DockSec/) [![OWASP](https://img.shields.io/badge/Code-blue?label=type&style=for-the-badge)](https://owasp.org/DockSec/) [![project-docksec](https://img.shields.io/badge/%23project--docksec-blue?label=slack&logoColor=white&style=for-the-badge)](https://owasp.slack.com/archives/C0APXGCUW7M) [![Build Status](https://img.shields.io/github/actions/workflow/status/OWASP/DockSec/python-app.yml?branch=main&style=for-the-badge&label=Build&color=blue)](https://github.com/OWASP/DockSec/actions)
+[![OWASP](https://img.shields.io/badge/Lab-blue?&label=level&style=for-the-badge)](https://owasp.org/DockSec/) [![OWASP](https://img.shields.io/badge/Code-blue?label=type&style=for-the-badge)](https://owasp.org/DockSec/) [![project-docksec](https://img.shields.io/badge/%23project--docksec-blue?label=slack&logoColor=white&style=for-the-badge)](https://owasp.slack.com/archives/C0APXGCUW7M) [![Build Status](https://img.shields.io/github/actions/workflow/status/OWASP/DockSec/python-app.yml?branch=main&style=for-the-badge&label=Build&color=blue)](https://github.com/OWASP/DockSec/actions)
 <br>[![OpenSSF Best Practices](https://img.shields.io/cii/level/12939?label=openssf%20best%20practices&style=for-the-badge)](https://www.bestpractices.dev/projects/12939)
 
 
@@ -28,7 +28,7 @@
 
 ## What is DockSec?
 
-DockSec is an **OWASP Incubator Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Hadolint, Docker Scout) with advanced AI to provide **context-aware security analysis**. 
+DockSec is an **OWASP Lab Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Hadolint, Docker Scout) with advanced AI to provide **context-aware security analysis**. 
 
 Instead of overwhelming you with a list of 200+ CVEs, DockSec:
 
@@ -127,7 +127,7 @@ Here is a comparison of how DockSec relates to other container security tools.
 | Capability | DockSec | Trivy (standalone) | Snyk Container | Aikido |
 |---|---|---|---|---|
 | License and cost | Free, open source (MIT) | Free, open source (Apache 2.0) | Commercial (limited free tier) | Commercial (limited free tier) |
-| Governance | OWASP Incubator Project, vendor neutral | Open source, maintained by Aqua | Single vendor | Single vendor |
+| Governance | OWASP Lab Project, vendor neutral | Open source, maintained by Aqua | Single vendor | Single vendor |
 | Detects CVEs and Dockerfile misconfigurations | Yes | Yes | Yes | Yes |
 | Contextual, line level Dockerfile remediation | Yes (line specific rewrites with explanation) | No (detection only) | Yes (base image upgrade advice, fix PRs) | Yes (AI AutoFix PRs) |
 | Runs fully offline / air gapped | Yes (local LLM via Ollama, scan only mode, no API key) | Yes for scanning (no remediation layer) | No (cloud platform) | No (hosted platform) |
