@@ -202,6 +202,21 @@ class ReportGenerator:
                     super().__init__()
                     self.set_auto_page_break(True, margin=15)
 
+                @staticmethod
+                def _safe(text: str) -> str:
+                    return (
+                        text
+                        .replace("—", "--")
+                        .replace("–", "-")
+                        .replace("‘", "'")
+                        .replace("’", "'")
+                        .replace("“", '"')
+                        .replace("”", '"')
+                        .replace("…", "...")
+                        .encode("latin-1", errors="replace")
+                        .decode("latin-1")
+                    )
+
                 def multi_cell_with_title(self, title, content, title_w=40):
                     """Create title-content pair with multi-line support"""
                     self.set_font("helvetica", "B", 10)
@@ -210,7 +225,7 @@ class ReportGenerator:
                     self.cell(title_w, 7, title)
                     self.set_font("helvetica", "", 10)
                     self.set_xy(x_start + title_w, y_start)
-                    self.multi_cell(0, 7, content, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    self.multi_cell(0, 7, self._safe(content), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     self.ln(2)
 
                 def add_section_header(self, title):
@@ -251,7 +266,7 @@ class ReportGenerator:
                     pdf.cell(0, 7, "Vulnerabilities:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font("helvetica", "", 9)
                     for i, vuln in enumerate(ai_findings["vulnerabilities"], 1):
-                        pdf.multi_cell(0, 5, f"{i}. {vuln}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.multi_cell(0, 5, pdf._safe(f"{i}. {vuln}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.ln(2)
                 
                 # Best Practices
@@ -260,7 +275,7 @@ class ReportGenerator:
                     pdf.cell(0, 7, "Best Practices:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font("helvetica", "", 9)
                     for i, practice in enumerate(ai_findings["best_practices"], 1):
-                        pdf.multi_cell(0, 5, f"{i}. {practice}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.multi_cell(0, 5, pdf._safe(f"{i}. {practice}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.ln(2)
                 
                 # Security Risks
@@ -269,7 +284,7 @@ class ReportGenerator:
                     pdf.cell(0, 7, "Security Risks:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font("helvetica", "", 9)
                     for i, risk in enumerate(ai_findings["security_risks"], 1):
-                        pdf.multi_cell(0, 5, f"{i}. {risk}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.multi_cell(0, 5, pdf._safe(f"{i}. {risk}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.ln(2)
                 
                 # Exposed Credentials
@@ -278,7 +293,7 @@ class ReportGenerator:
                     pdf.cell(0, 7, "Exposed Credentials:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font("helvetica", "", 9)
                     for i, cred in enumerate(ai_findings["exposed_credentials"], 1):
-                        pdf.multi_cell(0, 5, f"{i}. {cred}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.multi_cell(0, 5, pdf._safe(f"{i}. {cred}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.ln(2)
                 
                 # Remediation Steps
@@ -287,7 +302,7 @@ class ReportGenerator:
                     pdf.cell(0, 7, "Remediation Steps:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.set_font("helvetica", "", 9)
                     for i, step in enumerate(ai_findings["remediation"], 1):
-                        pdf.multi_cell(0, 5, f"{i}. {step}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                        pdf.multi_cell(0, 5, pdf._safe(f"{i}. {step}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                     pdf.ln(5)
 
             # Image Information (if available)
