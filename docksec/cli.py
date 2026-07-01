@@ -53,6 +53,7 @@ def main() -> None:
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
     parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
     parser.add_argument('--severity', help='Comma-separated severity levels to scan for (default: CRITICAL,HIGH; or set DOCKSEC_DEFAULT_SEVERITY)')
+    parser.add_argument('--fail-on', dest='fail_on', metavar='SEVERITY', help='Exit with code 1 if any finding is at or above this severity (CRITICAL, HIGH, MEDIUM, or LOW)')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -89,17 +90,37 @@ def main() -> None:
             f"Invalid --severity value '{severity}'. "
             f"Valid levels: {', '.join(Severity.values())}"
         )
-        sys.exit(1)
+        sys.exit(2)
     severity = ','.join(severity_list)
+
+    # Validate --fail-on and widen the scan severity so the gate can see the
+    # levels it needs (e.g. --fail-on medium with the default CRITICAL,HIGH scan
+    # would otherwise never observe MEDIUM findings). Compose static findings are
+    # always emitted at all severities, so widening only affects the image scan.
+    if args.fail_on:
+        args.fail_on = args.fail_on.strip().upper()
+        if args.fail_on not in Severity.gate_levels():
+            output.error(
+                f"Invalid --fail-on value '{args.fail_on}'. "
+                f"Choose one of: {', '.join(Severity.gate_levels())}"
+            )
+            sys.exit(2)
+        needed = {lvl for lvl in Severity.gate_levels()
+                  if Severity.rank(lvl) >= Severity.rank(args.fail_on)}
+        widened = set(severity_list) | needed
+        if widened != set(severity_list):
+            severity_list = [lvl for lvl in Severity.values() if lvl in widened]
+            severity = ','.join(severity_list)
+            output.info(f"Widened scan severity to {severity} to satisfy --fail-on {args.fail_on}")
 
     # Validate argument combinations
     if args.image_only and args.ai_only:
         output.error("--image-only and --ai-only cannot be used together (AI analysis requires a Dockerfile)")
-        sys.exit(1)
+        sys.exit(2)
     
     if args.image_only and args.scan_only:
         output.error("--image-only and --scan-only cannot be used together (use --image-only for image-only scanning)")
-        sys.exit(1)
+        sys.exit(2)
     
     # Validate Dockerfile requirement
     if not args.image_only and not args.compose and not args.dockerfile:
@@ -109,18 +130,18 @@ def main() -> None:
         print("  docksec --image-only -i myapp:latest        # Scan only the image")
         print("  docksec --compose docker-compose.yml        # Scan compose file and its services")
         print("  docksec --ai-only Dockerfile                # AI analysis only")
-        sys.exit(1)
+        sys.exit(2)
     
     # Validate that the Dockerfile exists (if provided)
     if args.dockerfile and not os.path.isfile(args.dockerfile):
         output.error(f"Dockerfile not found at {args.dockerfile}")
-        sys.exit(1)
+        sys.exit(2)
     
     # Validate image requirement for image-based operations
     if args.image_only and not args.image:
         output.error("Image name is required for image-only scanning. Use -i/--image to specify the Docker image.")
         print("Example: docksec --image-only -i myapp:latest")
-        sys.exit(1)
+        sys.exit(2)
     
     # In scan-only mode, if no image is provided, we'll only run Dockerfile analysis
     if args.scan_only and not args.image:
@@ -142,11 +163,11 @@ def main() -> None:
                     break
             if compose_path == 'auto':
                 output.error("Could not auto-detect a docker-compose file in the current directory.")
-                sys.exit(1)
+                sys.exit(2)
         
         if not os.path.isfile(compose_path):
             output.error(f"Compose file not found at {compose_path}")
-            sys.exit(1)
+            sys.exit(2)
             
         args.compose = compose_path
     elif args.image_only:
@@ -235,12 +256,13 @@ def main() -> None:
 
         except ImportError as e:
             output.error(f"Required modules not found - {e}")
-            sys.exit(1)
+            sys.exit(3)
         except Exception as e:
             output.error(f"AI analysis failed: {e}")
     
     # Run the scanner tool
     scan_ok = None  # None = scan not run, True = success, False = failed
+    gate_triggered = False  # True when findings meet the --fail-on threshold
     if run_scan:
         scan_title = "Compose" if run_compose_analysis else ("Image" if args.image_only else "Full")
         output.section(f"{scan_title} security scan")
@@ -299,23 +321,37 @@ def main() -> None:
             _render_scan_summary(output, args, scanner, results, report_paths,
                                  run_ai, run_compose_analysis)
 
+            # --fail-on gate: flag findings at or above the chosen threshold.
+            if args.fail_on:
+                triggering = _findings_at_or_above(results, args.fail_on)
+                if triggering:
+                    gate_triggered = True
+                    output.warn(
+                        f"{len(triggering)} finding(s) at or above {args.fail_on} "
+                        f"(--fail-on {args.fail_on}) -> exit 1"
+                    )
+
         except ValueError as e:
             # Expected, actionable failures (missing image, missing tools, bad input).
             output.error(str(e))
             scan_ok = False
         except ImportError as e:
             output.error(f"Scanner modules not found - {e}")
-            sys.exit(1)
+            sys.exit(3)
         except Exception as e:
             output.error(f"Scanner failed: {e}")
             scan_ok = False
 
+    # Exit codes (CI-friendly): 0 clean, 1 findings at/above --fail-on,
+    # 2 usage error, 3 tool/runtime error.
     if not run_ai and not run_scan:
         output.warn("No analysis performed. Use --help for usage information.")
         sys.exit(2)
 
-    # Exit non-zero when the scan failed so CI and shells can react honestly.
     if scan_ok is False:
+        sys.exit(3)
+
+    if gate_triggered:
         sys.exit(1)
 
 
@@ -361,6 +397,22 @@ def _quick_take_lines(results, counts, run_ai):
         lines.append("Run without --scan-only to add AI-powered explanations and fixes")
 
     return lines
+
+
+def _findings_at_or_above(results, threshold):
+    """Return the scan findings whose severity is at or above the threshold.
+
+    Operates on the structured findings in ``json_data`` (image vulnerabilities
+    and compose misconfigurations). Hadolint lint warnings are not severity-ranked
+    and do not participate in the --fail-on gate.
+    """
+    from docksec.enums import Severity
+
+    threshold_rank = Severity.rank(threshold)
+    return [
+        v for v in results.get("json_data", [])
+        if Severity.rank(v.get("Severity")) >= threshold_rank
+    ]
 
 
 def _format_hadolint_line(line):
