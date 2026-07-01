@@ -52,6 +52,7 @@ def main() -> None:
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-haiku-4-5, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
     parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
+    parser.add_argument('--severity', help='Comma-separated severity levels to scan for (default: CRITICAL,HIGH; or set DOCKSEC_DEFAULT_SEVERITY)')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -76,7 +77,21 @@ def main() -> None:
     # Set compact output mode if requested
     if args.compact_output:
         os.environ["DOCKSEC_COMPACT_OUTPUT"] = "true"
-    
+
+    # Resolve the severity filter: CLI flag > DOCKSEC_DEFAULT_SEVERITY env > default.
+    from docksec.config_manager import get_config
+    from docksec.enums import Severity
+    severity = args.severity or get_config().default_severity
+    severity_list = [s.strip().upper() for s in severity.split(',') if s.strip()]
+    invalid_severities = [s for s in severity_list if s not in Severity.values()]
+    if not severity_list or invalid_severities:
+        output.error(
+            f"Invalid --severity value '{severity}'. "
+            f"Valid levels: {', '.join(Severity.values())}"
+        )
+        sys.exit(1)
+    severity = ','.join(severity_list)
+
     # Validate argument combinations
     if args.image_only and args.ai_only:
         output.error("--image-only and --ai-only cannot be used together (AI analysis requires a Dockerfile)")
@@ -162,6 +177,8 @@ def main() -> None:
 
     output.banner(get_version(), mode_desc)
     output.kv("Reports", RESULTS_DIR)
+    if run_scan:
+        output.kv("Severity", severity)
     if run_ai:
         config = get_config()
         output.kv("AI Provider", str(config.llm_provider))
@@ -238,7 +255,7 @@ def main() -> None:
                     skip_ai_scoring=args.skip_ai_scoring
                 )
                 output.info(f"Scanning Compose file: {args.compose}")
-                results = orchestrator.run_full_scan("CRITICAL,HIGH")
+                results = orchestrator.run_full_scan(severity)
 
                 # We need a scanner instance just for scoring and reporting
                 scanner = DockerSecurityScanner(None, None, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring)
@@ -258,10 +275,10 @@ def main() -> None:
                 if args.image_only:
                     # Image-only scan - skip Dockerfile analysis
                     output.info(f"Scanning Docker image: {args.image}")
-                    results = scanner.run_image_only_scan("CRITICAL,HIGH")
+                    results = scanner.run_image_only_scan(severity)
                 else:
                     # Full scan including Dockerfile
-                    results = scanner.run_full_scan("CRITICAL,HIGH")
+                    results = scanner.run_full_scan(severity)
 
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)
