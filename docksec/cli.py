@@ -52,32 +52,43 @@ def main() -> None:
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-haiku-4-5, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
     parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
+    parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
+    parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
-    
+
     args = parser.parse_args()
-    
+
+    # Configure the terminal output layer before anything is printed.
+    from docksec import output
+    no_color = args.no_color or bool(os.getenv("NO_COLOR"))
+    if no_color:
+        # Every Rich console (including the AI-findings console in utils) honors
+        # NO_COLOR, so set it before those modules are imported.
+        os.environ["NO_COLOR"] = "1"
+    output.configure(quiet=args.quiet, no_color=no_color)
+
     # Set provider and model from CLI args if provided (overrides env vars)
     if args.provider:
         os.environ["LLM_PROVIDER"] = args.provider
     if args.model:
         os.environ["LLM_MODEL"] = args.model
-    
+
     # Set compact output mode if requested
     if args.compact_output:
         os.environ["DOCKSEC_COMPACT_OUTPUT"] = "true"
     
     # Validate argument combinations
     if args.image_only and args.ai_only:
-        print("Error: --image-only and --ai-only cannot be used together (AI analysis requires Dockerfile)")
+        output.error("--image-only and --ai-only cannot be used together (AI analysis requires a Dockerfile)")
         sys.exit(1)
     
     if args.image_only and args.scan_only:
-        print("Error: --image-only and --scan-only cannot be used together (use --image-only for image-only scanning)")
+        output.error("--image-only and --scan-only cannot be used together (use --image-only for image-only scanning)")
         sys.exit(1)
     
     # Validate Dockerfile requirement
     if not args.image_only and not args.compose and not args.dockerfile:
-        print("Error: Dockerfile path is required unless using --image-only or --compose")
+        output.error("Dockerfile path is required unless using --image-only or --compose")
         print("Usage examples:")
         print("  docksec Dockerfile -i myapp:latest          # Analyze both Dockerfile and image")
         print("  docksec --image-only -i myapp:latest        # Scan only the image")
@@ -87,18 +98,18 @@ def main() -> None:
     
     # Validate that the Dockerfile exists (if provided)
     if args.dockerfile and not os.path.isfile(args.dockerfile):
-        print(f"Error: Dockerfile not found at {args.dockerfile}")
+        output.error(f"Dockerfile not found at {args.dockerfile}")
         sys.exit(1)
     
     # Validate image requirement for image-based operations
     if args.image_only and not args.image:
-        print("Error: Image name is required for image-only scanning. Use -i/--image to specify the Docker image.")
+        output.error("Image name is required for image-only scanning. Use -i/--image to specify the Docker image.")
         print("Example: docksec --image-only -i myapp:latest")
         sys.exit(1)
     
     # In scan-only mode, if no image is provided, we'll only run Dockerfile analysis
     if args.scan_only and not args.image:
-        print("[INFO] No image provided for scan-only mode. Running Dockerfile analysis only.")
+        output.info("No image provided for scan-only mode. Running Dockerfile analysis only.")
     
     # Determine which tools to run
     if args.compose:
@@ -115,11 +126,11 @@ def main() -> None:
                     compose_path = name
                     break
             if compose_path == 'auto':
-                print("Error: Could not auto-detect a docker-compose file in the current directory.")
+                output.error("Could not auto-detect a docker-compose file in the current directory.")
                 sys.exit(1)
         
         if not os.path.isfile(compose_path):
-            print(f"Error: Compose file not found at {compose_path}")
+            output.error(f"Compose file not found at {compose_path}")
             sys.exit(1)
             
         args.compose = compose_path
@@ -145,21 +156,22 @@ def main() -> None:
         run_compose_analysis = False
         mode_desc = "Full Analysis (AI + Scanner)"
     
-    print(f"\n[INFO] Mode: {mode_desc}")
     from docksec.config import RESULTS_DIR
     from docksec.config_manager import get_config
     from docksec.enums import LLMProvider
-    print(f"[INFO] Reports will be saved to: {RESULTS_DIR}")
+
+    output.banner(get_version(), mode_desc)
+    output.kv("Reports", RESULTS_DIR)
     if run_ai:
         config = get_config()
-        print(f"[INFO] AI Provider: {config.llm_provider}")
+        output.kv("AI Provider", str(config.llm_provider))
     
     # Initialize AI findings storage
     ai_findings = None
     
     # Run the AI-based recommendation tool
     if run_ai:
-        print("\n=== Running AI-based Dockerfile analysis ===")
+        output.section("AI-based Dockerfile analysis")
         try:
             # Import required modules from main.py
             from docksec.utils import (
@@ -195,28 +207,29 @@ def main() -> None:
                 file_type = "Dockerfile"
             
             if not filecontent:
-                print(f"Error: No {file_type} content found.")
+                output.error(f"No {file_type} content found.")
                 return
-            
+
             # Truncate content to reduce token usage
             truncated_content = truncate_dockerfile(filecontent, max_lines=150, max_chars=4000) if run_compose_analysis else truncate_dockerfile(filecontent, max_lines=50, max_chars=2000)
-            
+
             response = analyser_chain.invoke({"filecontent": truncated_content})
             ai_findings = analyze_security(response, compact=True, report_path=RESULTS_DIR)
-            
+
         except ImportError as e:
-            print(f"Error: Required modules not found - {e}")
+            output.error(f"Required modules not found - {e}")
             sys.exit(1)
         except Exception as e:
-            print(f"Error running AI analysis: {e}")
+            output.error(f"AI analysis failed: {e}")
     
     # Run the scanner tool
+    scan_ok = None  # None = scan not run, True = success, False = failed
     if run_scan:
-        scan_type = "compose" if run_compose_analysis else ("image-only" if args.image_only else "full")
-        print(f"\n=== Running {scan_type} security scanner ===")
+        scan_title = "Compose" if run_compose_analysis else ("Image" if args.image_only else "Full")
+        output.section(f"{scan_title} security scan")
         try:
             from docksec.docker_scanner import DockerSecurityScanner
-            
+
             if run_compose_analysis:
                 from docksec.compose_scanner import ComposeOrchestrator
                 orchestrator = ComposeOrchestrator(
@@ -224,9 +237,9 @@ def main() -> None:
                     scan_only=not run_ai,
                     skip_ai_scoring=args.skip_ai_scoring
                 )
-                print(f"Scanning Compose file: {args.compose}")
+                output.info(f"Scanning Compose file: {args.compose}")
                 results = orchestrator.run_full_scan("CRITICAL,HIGH")
-                
+
                 # We need a scanner instance just for scoring and reporting
                 scanner = DockerSecurityScanner(None, None, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring)
                 scanner.image_name = "Multiple Services"
@@ -235,50 +248,130 @@ def main() -> None:
                 # Initialize the scanner
                 dockerfile_path = None if args.image_only else args.dockerfile
                 scanner = DockerSecurityScanner(
-                    dockerfile_path, 
-                    args.image, 
+                    dockerfile_path,
+                    args.image,
                     scan_only=not run_ai,
                     skip_ai_scoring=args.skip_ai_scoring
                 )
-                
+
                 # Run appropriate scan based on mode
                 if args.image_only:
                     # Image-only scan - skip Dockerfile analysis
-                    print(f"Scanning Docker image: {args.image}")
+                    output.info(f"Scanning Docker image: {args.image}")
                     results = scanner.run_image_only_scan("CRITICAL,HIGH")
                 else:
                     # Full scan including Dockerfile
                     results = scanner.run_full_scan("CRITICAL,HIGH")
-            
+
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)
-            
+
             # Add AI findings to results if available
             if ai_findings:
                 results["ai_findings"] = ai_findings
-            
+
             # Generate all reports
-            scanner.generate_all_reports(results)
-            
+            report_paths = scanner.generate_all_reports(results)
+
             # Run advanced scan if available and image is provided (skip for compose)
             if hasattr(scanner, 'advanced_scan') and args.image and not run_compose_analysis:
-                print("\n=== Running Advanced Scan ===")
+                output.section("Advanced scan (Docker Scout)")
                 scanner.advanced_scan()
-            
-            print("\n=== Scanning Complete ===")
-            
+
+            scan_ok = True
+            _render_scan_summary(output, args, scanner, results, report_paths,
+                                 run_ai, run_compose_analysis)
+
         except ValueError as e:
-            print(f"Scanner error: {e}")
+            # Expected, actionable failures (missing image, missing tools, bad input).
+            output.error(str(e))
+            scan_ok = False
         except ImportError as e:
-            print(f"Error: Scanner modules not found - {e}")
+            output.error(f"Scanner modules not found - {e}")
             sys.exit(1)
         except Exception as e:
-            print(f"Error running scanner: {e}")
-    
+            output.error(f"Scanner failed: {e}")
+            scan_ok = False
+
     if not run_ai and not run_scan:
-        print("No analysis performed. Use --help for usage information.")
-    else:
-        print("\nAnalysis complete!")
+        output.warn("No analysis performed. Use --help for usage information.")
+        sys.exit(2)
+
+    # Exit non-zero when the scan failed so CI and shells can react honestly.
+    if scan_ok is False:
+        sys.exit(1)
+
+
+def _render_scan_summary(output, args, scanner, results, report_paths,
+                         run_ai, run_compose_analysis):
+    """Render the consolidated result summary: severity table, score, a Quick
+    take action block, the generated reports, and a suggested next command."""
+    vulnerabilities = results.get("json_data", [])
+    counts = output.count_by_severity(vulnerabilities)
+
+    output.section("Results")
+    output.severity_table(counts)
+    output.score(getattr(scanner, "analysis_score", None))
+    output.quick_take(_quick_take_lines(results, counts, run_ai))
+    if report_paths:
+        output.report_results(report_paths, scanner.RESULTS_DIR)
+    output.next_command(_suggest_next_command(args, results, run_ai, run_compose_analysis))
+
+
+def _quick_take_lines(results, counts, run_ai):
+    """Build a few high-signal lines summarizing what matters most."""
+    lines = []
+
+    total_vulns = sum(counts.get(sev, 0) for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"))
+    if total_vulns:
+        crit, high = counts.get("CRITICAL", 0), counts.get("HIGH", 0)
+        lines.append(f"{total_vulns} security findings ({crit} critical, {high} high)")
+
+    dockerfile_scan = results.get("dockerfile_scan", {})
+    if not dockerfile_scan.get("skipped") and not dockerfile_scan.get("success"):
+        output_text = dockerfile_scan.get("output") or ""
+        issue_lines = [ln for ln in output_text.splitlines() if ln.strip()]
+        if issue_lines:
+            top = _format_hadolint_line(issue_lines[0].strip())
+            lines.append(f"{len(issue_lines)} Dockerfile lint issues; top: {top}")
+
+    ai_findings = results.get("ai_findings") or {}
+    exposed = ai_findings.get("exposed_credentials") or []
+    if exposed:
+        lines.append(f"{len(exposed)} likely exposed credential(s) flagged by AI analysis")
+
+    if not run_ai and not results.get("ai_findings"):
+        lines.append("Run without --scan-only to add AI-powered explanations and fixes")
+
+    return lines
+
+
+def _format_hadolint_line(line):
+    """Turn a raw Hadolint line into a compact, path-free summary.
+
+    Input:  '/abs/path/Dockerfile:2 DL3020 error: Use COPY instead of ADD'
+    Output: 'DL3020 error: Use COPY instead of ADD (line 2)'
+    """
+    head, _, rest = line.partition(" ")
+    rest = rest.strip()
+    if not rest:
+        return line
+    line_no = head.rsplit(":", 1)[-1]
+    if line_no.isdigit():
+        return f"{rest} (line {line_no})"
+    return rest
+
+
+def _suggest_next_command(args, results, run_ai, run_compose_analysis):
+    """Suggest the most useful follow-up command for the current run."""
+    if run_compose_analysis:
+        return ""
+    dockerfile = getattr(args, "dockerfile", None)
+    # No image was scanned but a Dockerfile is present: suggest adding one.
+    image_skipped = results.get("image_scan", {}).get("skipped")
+    if dockerfile and image_skipped and not args.image:
+        return f"docksec {dockerfile} -i <your-image>:<tag>"
+    return ""
 
 if __name__ == "__main__":
     main()

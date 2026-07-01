@@ -163,6 +163,83 @@ class TestCLI(unittest.TestCase):
                 # This tests that the env var would be set
                 pass
 
+    @patch('sys.argv', ['docksec', '/no/such/docksec_dockerfile_xyz', '--quiet', '--no-color'])
+    def test_quiet_and_no_color_flags_are_accepted(self):
+        """--quiet and --no-color must parse (argparse exits 2 on unknown flags)."""
+        from docksec.cli import main
+
+        with patch('builtins.print'):
+            with self.assertRaises(SystemExit) as ctx:
+                # The Dockerfile path does not exist, so main exits 1 during
+                # validation - well past argument parsing.
+                main()
+        self.assertNotEqual(ctx.exception.code, 2)
+
+
+class TestCLIHelpers(unittest.TestCase):
+    """Test cases for the CLI summary helper functions."""
+
+    def test_format_hadolint_line_strips_path_keeps_rule_and_line(self):
+        from docksec.cli import _format_hadolint_line
+
+        raw = "/abs/path/Dockerfile:2 DL3020 error: Use COPY instead of ADD"
+        self.assertEqual(
+            _format_hadolint_line(raw),
+            "DL3020 error: Use COPY instead of ADD (line 2)",
+        )
+
+    def test_format_hadolint_line_without_line_number(self):
+        from docksec.cli import _format_hadolint_line
+
+        self.assertEqual(_format_hadolint_line("just a message"), "a message")
+
+    def test_quick_take_reports_vulnerabilities_and_lint(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {
+            "dockerfile_scan": {
+                "skipped": False,
+                "success": False,
+                "output": "/x/Dockerfile:2 DL3020 error: Use COPY instead of ADD",
+            },
+        }
+        counts = {"CRITICAL": 1, "HIGH": 2, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        joined = " ".join(lines)
+        self.assertIn("3 security findings", joined)
+        self.assertIn("1 critical", joined)
+        self.assertIn("Dockerfile lint issues", joined)
+
+    def test_quick_take_suggests_ai_when_scan_only(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {"dockerfile_scan": {"skipped": True}}
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=False)
+        self.assertTrue(any("--scan-only" in line for line in lines))
+
+    def test_suggest_next_command_recommends_image_scan(self):
+        from docksec.cli import _suggest_next_command
+
+        class Args:
+            dockerfile = "Dockerfile"
+            image = None
+
+        results = {"image_scan": {"skipped": True}}
+        cmd = _suggest_next_command(Args(), results, run_ai=True, run_compose_analysis=False)
+        self.assertIn("Dockerfile", cmd)
+        self.assertIn("-i", cmd)
+
+    def test_suggest_next_command_empty_for_compose(self):
+        from docksec.cli import _suggest_next_command
+
+        class Args:
+            dockerfile = None
+            image = None
+
+        cmd = _suggest_next_command(Args(), {}, run_ai=True, run_compose_analysis=True)
+        self.assertEqual(cmd, "")
+
 
 if __name__ == '__main__':
     unittest.main()

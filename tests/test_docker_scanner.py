@@ -170,42 +170,40 @@ class TestDockerSecurityScanner(unittest.TestCase):
         self.assertIn('unknown', unknown_instructions)
     
     @patch('docksec.docker_scanner.defaultdict')
-    @patch('builtins.print')
-    def test_print_compact_vulnerability_summary_no_vulns(self, mock_print, mock_defaultdict):
+    @patch('docksec.docker_scanner.ui')
+    def test_print_compact_vulnerability_summary_no_vulns(self, mock_ui, mock_defaultdict):
         """Test compact summary printing with no vulnerabilities."""
         from docksec.docker_scanner import DockerSecurityScanner
-        
+
         # Mock defaultdict to return a plain dict
         mock_defaultdict.side_effect = lambda: {}
-        
+
         scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
         scanner._print_compact_vulnerability_summary([])
-        
-        # Should print success message
-        mock_print.assert_called()
-    
-    @patch('builtins.print')
-    def test_print_compact_vulnerability_summary_with_vulns(self, mock_print):
+
+        # Should report the no-vulnerabilities success message via the output layer
+        mock_ui.success.assert_called()
+
+    @patch('docksec.docker_scanner.ui')
+    def test_print_compact_vulnerability_summary_with_vulns(self, mock_ui):
         """Test compact summary printing with vulnerabilities."""
         from docksec.docker_scanner import DockerSecurityScanner
-        
+
         vulnerabilities = [
             {'Severity': 'CRITICAL'},
             {'Severity': 'CRITICAL'},
             {'Severity': 'HIGH'},
             {'Severity': 'MEDIUM'},
         ]
-        
+
         scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
         scanner._print_compact_vulnerability_summary(vulnerabilities)
-        
-        # Should print summary
-        mock_print.assert_called()
-        # Check that all calls contain expected info
-        print_calls = [str(call) for call in mock_print.call_args_list]
-        combined_output = ' '.join(print_calls)
+
+        # Should render the summary via the output layer
+        mock_ui.detail.assert_called()
+        combined_output = ' '.join(str(call) for call in mock_ui.detail.call_args_list)
         self.assertIn('CRITICAL', combined_output)
-    
+
     def test_scan_results_cache_initialization(self):
         """Test ScanResultsCache initialization."""
         from docksec.docker_scanner import ScanResultsCache

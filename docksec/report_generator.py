@@ -19,6 +19,7 @@ import warnings
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from docksec import output
 from docksec.config import RESULTS_DIR, get_html_template
 from docksec.utils import get_custom_logger
 
@@ -123,11 +124,10 @@ class ReportGenerator:
             with open(output_file, "w") as f:
                 json.dump(report_data, f, indent=4)
             logger.info("JSON report saved successfully")
-            print(f"[SUCCESS] JSON report saved to {output_file}")
             return output_file
         except Exception as e:
             logger.error(f"Error saving JSON report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving JSON report: {e}")
+            output.error(f"Failed to save JSON report: {e}")
             return ""
 
     def generate_csv_report(self, results: Dict) -> str:
@@ -147,9 +147,6 @@ class ReportGenerator:
         if not vulnerabilities:
             logger.warning(
                 "No vulnerability data to save to CSV, creating header-only file"
-            )
-            print(
-                "[WARNING] No vulnerability data to save to CSV, creating header-only file"
             )
 
         try:
@@ -179,12 +176,11 @@ class ReportGenerator:
             logger.info(
                 f"CSV report saved successfully with {len(vulnerabilities)} vulnerabilities"
             )
-            print(f"[SUCCESS] CSV report saved to {output_file}")
             return output_file
 
         except Exception as e:
             logger.error(f"Error saving CSV report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving CSV report: {e}")
+            output.error(f"Failed to save CSV report: {e}")
             return ""
 
     def generate_pdf_report(self, results: Dict) -> str:
@@ -481,12 +477,11 @@ class ReportGenerator:
 
             pdf.output(output_file)
             logger.info("PDF report saved successfully")
-            print(f"[SUCCESS] PDF report saved to {output_file}")
             return output_file
 
         except Exception as e:
             logger.error(f"Error saving PDF report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving PDF report: {e}")
+            output.error(f"Failed to save PDF report: {e}")
             return ""
 
     def generate_html_report(self, results: Dict) -> str:
@@ -515,12 +510,11 @@ class ReportGenerator:
                 f.write(html_content)
 
             logger.info("HTML report saved successfully")
-            print(f"[SUCCESS] HTML report saved to {output_file}")
             return output_file
 
         except Exception as e:
             logger.error(f"Error saving HTML report: {e}", exc_info=True)
-            print(f"[ERROR] Error saving HTML report: {e}")
+            output.error(f"Failed to save HTML report: {e}")
             return ""
 
     def _prepare_html_template_vars(self, results: Dict) -> Dict[str, str]:
@@ -795,53 +789,24 @@ class ReportGenerator:
         """
         Generate all report formats.
 
+        Writing four files is effectively instant, so this runs silently and
+        returns the written paths; the CLI renders a single report summary from
+        the return value (see docksec.output.report_results).
+
         Args:
             results: Scan results dictionary
 
         Returns:
             Dictionary mapping format to file path
         """
-        from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-
         logger.info("Generating all report formats")
-        print("\n=== Generating Reports ===")
 
-        report_paths = {"json": "", "csv": "", "pdf": "", "html": ""}
+        report_paths = {
+            "json": self.generate_json_report(results),
+            "csv": self.generate_csv_report(results),
+            "pdf": self.generate_pdf_report(results),
+            "html": self.generate_html_report(results),
+        }
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            console=None,
-        ) as progress:
-            # JSON report
-            json_task = progress.add_task("[cyan]Generating JSON report...", total=1)
-            json_path = self.generate_json_report(results)
-            if json_path:
-                report_paths["json"] = json_path
-            progress.update(json_task, advance=1)
-
-            # CSV report
-            csv_task = progress.add_task("[cyan]Generating CSV report...", total=1)
-            csv_path = self.generate_csv_report(results)
-            if csv_path:
-                report_paths["csv"] = csv_path
-            progress.update(csv_task, advance=1)
-
-            # PDF report
-            pdf_task = progress.add_task("[cyan]Generating PDF report...", total=1)
-            pdf_path = self.generate_pdf_report(results)
-            if pdf_path:
-                report_paths["pdf"] = pdf_path
-            progress.update(pdf_task, advance=1)
-
-            # HTML report
-            html_task = progress.add_task("[cyan]Generating HTML report...", total=1)
-            html_path = self.generate_html_report(results)
-            if html_path:
-                report_paths["html"] = html_path
-            progress.update(html_task, advance=1)
-
-        print(f"\n[SUCCESS] Reports generated in: {self.results_dir}")
         logger.info(f"All reports generated: {report_paths}")
         return report_paths
