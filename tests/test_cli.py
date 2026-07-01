@@ -165,13 +165,13 @@ class TestCLI(unittest.TestCase):
 
     @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--severity', 'BOGUS'])
     def test_invalid_severity_is_rejected(self):
-        """An invalid --severity value should error out and exit non-zero."""
+        """An invalid --severity value is a usage error and exits 2."""
         from docksec.cli import main
 
         with patch('builtins.print'):
             with self.assertRaises(SystemExit) as ctx:
                 main()
-        self.assertEqual(ctx.exception.code, 1)
+        self.assertEqual(ctx.exception.code, 2)
 
     @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--severity', 'critical'])
     @patch('docksec.docker_scanner.DockerSecurityScanner')
@@ -196,15 +196,15 @@ class TestCLI(unittest.TestCase):
         # 'critical' is normalized to 'CRITICAL' and passed to the image scan.
         scanner.run_image_only_scan.assert_called_once_with('CRITICAL')
 
-    @patch('sys.argv', ['docksec', '/no/such/docksec_dockerfile_xyz', '--quiet', '--no-color'])
+    @patch('sys.argv', ['docksec', '--image-only', '-i', 'docksec_missing_img_xyz:latest', '--quiet', '--no-color'])
     def test_quiet_and_no_color_flags_are_accepted(self):
-        """--quiet and --no-color must parse (argparse exits 2 on unknown flags)."""
+        """--quiet and --no-color must parse. Using a missing image makes the run
+        reach a tool/runtime error (exit 3), which is distinct from argparse's
+        exit 2 for an unknown flag - so a non-2 exit proves the flags parsed."""
         from docksec.cli import main
 
         with patch('builtins.print'):
             with self.assertRaises(SystemExit) as ctx:
-                # The Dockerfile path does not exist, so main exits 1 during
-                # validation - well past argument parsing.
                 main()
         self.assertNotEqual(ctx.exception.code, 2)
 
@@ -272,6 +272,81 @@ class TestCLIHelpers(unittest.TestCase):
 
         cmd = _suggest_next_command(Args(), {}, run_ai=True, run_compose_analysis=True)
         self.assertEqual(cmd, "")
+
+
+class TestFailOnGate(unittest.TestCase):
+    """Test cases for the --fail-on gate helper and exit codes."""
+
+    def _results(self, severities):
+        return {"json_data": [{"Severity": s} for s in severities]}
+
+    def test_findings_at_or_above_includes_equal_and_higher(self):
+        from docksec.cli import _findings_at_or_above
+
+        results = self._results(["CRITICAL", "HIGH", "MEDIUM", "LOW"])
+        # threshold HIGH -> CRITICAL + HIGH
+        self.assertEqual(len(_findings_at_or_above(results, "HIGH")), 2)
+        # threshold LOW -> all four
+        self.assertEqual(len(_findings_at_or_above(results, "LOW")), 4)
+        # threshold CRITICAL -> only CRITICAL
+        self.assertEqual(len(_findings_at_or_above(results, "CRITICAL")), 1)
+
+    def test_findings_at_or_above_ignores_unknown(self):
+        from docksec.cli import _findings_at_or_above
+
+        results = self._results(["UNKNOWN", "UNKNOWN"])
+        self.assertEqual(_findings_at_or_above(results, "LOW"), [])
+
+    def test_findings_at_or_above_empty(self):
+        from docksec.cli import _findings_at_or_above
+
+        self.assertEqual(_findings_at_or_above({"json_data": []}, "CRITICAL"), [])
+
+    @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--fail-on', 'BOGUS'])
+    def test_invalid_fail_on_exits_2(self):
+        from docksec.cli import main
+
+        with patch('builtins.print'):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        self.assertEqual(ctx.exception.code, 2)
+
+    def _run_image_only_with(self, findings, fail_on):
+        """Run main() image-only with a mocked scanner returning `findings`."""
+        from docksec.cli import main
+
+        argv = ['docksec', '--image-only', '-i', 'test:latest']
+        if fail_on:
+            argv += ['--fail-on', fail_on]
+        with patch('sys.argv', argv), \
+             patch('docksec.docker_scanner.DockerSecurityScanner') as cls:
+            scanner = Mock()
+            cls.return_value = scanner
+            scanner.run_image_only_scan.return_value = {
+                'json_data': [{"Severity": s} for s in findings],
+                'dockerfile_scan': {'skipped': True},
+                'image_scan': {'skipped': False},
+                'scan_mode': 'image_only',
+            }
+            scanner.get_security_score.return_value = 80.0
+            scanner.generate_all_reports.return_value = {'json': 'x'}
+            scanner.RESULTS_DIR = '/tmp'
+            code = 0
+            try:
+                main()
+            except SystemExit as e:
+                code = e.code
+            return code
+
+    def test_gate_triggers_exit_1_on_matching_finding(self):
+        self.assertEqual(self._run_image_only_with(["HIGH"], "high"), 1)
+
+    def test_gate_clean_exit_0_when_below_threshold(self):
+        # LOW finding, threshold CRITICAL -> nothing at/above -> exit 0
+        self.assertEqual(self._run_image_only_with(["LOW"], "critical"), 0)
+
+    def test_no_fail_on_never_gates(self):
+        self.assertEqual(self._run_image_only_with(["CRITICAL"], None), 0)
 
 
 if __name__ == '__main__':

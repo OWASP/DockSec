@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--quiet` flag to reduce output to warnings, errors, and the result summary.
 - `--no-color` flag (also honors the `NO_COLOR` environment variable) to disable colored output.
 - `--severity` flag to choose which severity levels the image vulnerability scan reports (default `CRITICAL,HIGH`; also settable via `DOCKSEC_DEFAULT_SEVERITY`). Invalid values are rejected with a clear error.
+- `--fail-on <severity>` flag: exit with code 1 when any finding is at or above the chosen severity (`CRITICAL`, `HIGH`, `MEDIUM`, or `LOW`). The scan severity is auto-widened when needed so the gate can observe those findings.
+- CI-friendly exit codes: `0` clean, `1` findings at or above `--fail-on`, `2` usage/argument error, `3` tool or runtime error (scan failed, image not found, missing tools).
 
 ### Changed
 - **Cleaner terminal output**: internal logs now write to `stderr` instead of `stdout` and stay quiet in CLI mode, so raw location-tagged log lines no longer interleave with the tool's user-facing messages. Set `DOCKSEC_LOG_LEVEL` to restore verbose logging.

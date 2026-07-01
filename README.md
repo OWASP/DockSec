@@ -106,6 +106,9 @@ docksec Dockerfile --scan-only
 # Choose which severity levels the image scan reports (default: CRITICAL,HIGH)
 docksec -i myapp:latest --image-only --severity CRITICAL,HIGH,MEDIUM
 
+# Fail the build (exit 1) if any finding is HIGH or above
+docksec -i myapp:latest --image-only --fail-on high
+
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 
@@ -115,8 +118,22 @@ docksec Dockerfile --no-color
 
 Every scan ends with a result summary: a severity table, the security score with a
 rating, a "Quick take" action block, the generated reports, and a suggested next
-command. Use `--quiet` for a compact result and `--no-color` for plain output. A failed
-scan exits non-zero, so it works cleanly in shells and CI.
+command. Use `--quiet` for a compact result and `--no-color` for plain output.
+
+### Exit codes
+
+DockSec uses CI-friendly exit codes so builds and shells can react to results:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success, no findings at or above `--fail-on` |
+| `1` | Findings at or above the `--fail-on` threshold |
+| `2` | Usage or argument error |
+| `3` | Tool or runtime error (scan failed, image not found, missing tools) |
+
+`--fail-on` gates on the structured findings (image vulnerabilities and compose
+misconfigurations). When `--fail-on` is below the requested `--severity`, the scan
+severity is widened automatically so the gate can observe those findings.
 
 ---
 
