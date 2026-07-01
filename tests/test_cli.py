@@ -163,6 +163,39 @@ class TestCLI(unittest.TestCase):
                 # This tests that the env var would be set
                 pass
 
+    @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--severity', 'BOGUS'])
+    def test_invalid_severity_is_rejected(self):
+        """An invalid --severity value should error out and exit non-zero."""
+        from docksec.cli import main
+
+        with patch('builtins.print'):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        self.assertEqual(ctx.exception.code, 1)
+
+    @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--severity', 'critical'])
+    @patch('docksec.docker_scanner.DockerSecurityScanner')
+    def test_severity_flag_threads_to_scanner(self, mock_scanner_class):
+        """A valid --severity should be normalized and passed to the scan call."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        mock_scanner_class.return_value = scanner
+        scanner.run_image_only_scan.return_value = {
+            'json_data': [],
+            'dockerfile_scan': {'skipped': True},
+            'image_scan': {'skipped': False},
+            'scan_mode': 'image_only',
+        }
+        scanner.get_security_score.return_value = 90.0
+        scanner.generate_all_reports.return_value = {'json': 'x'}
+        scanner.RESULTS_DIR = '/tmp'
+
+        main()
+
+        # 'critical' is normalized to 'CRITICAL' and passed to the image scan.
+        scanner.run_image_only_scan.assert_called_once_with('CRITICAL')
+
     @patch('sys.argv', ['docksec', '/no/such/docksec_dockerfile_xyz', '--quiet', '--no-color'])
     def test_quiet_and_no_color_flags_are_accepted(self):
         """--quiet and --no-color must parse (argparse exits 2 on unknown flags)."""

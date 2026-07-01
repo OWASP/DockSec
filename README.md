@@ -103,6 +103,9 @@ docksec --image-only -i myapp:latest
 # Fast scan only (no AI)
 docksec Dockerfile --scan-only
 
+# Choose which severity levels the image scan reports (default: CRITICAL,HIGH)
+docksec -i myapp:latest --image-only --severity CRITICAL,HIGH,MEDIUM
+
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Redesigned terminal output**: a consolidated result summary with a box-drawing severity table, the security score with a color-coded rating, a "Quick take" action block highlighting the most important findings, the list of generated reports, and a suggested next command.
 - `--quiet` flag to reduce output to warnings, errors, and the result summary.
 - `--no-color` flag (also honors the `NO_COLOR` environment variable) to disable colored output.
+- `--severity` flag to choose which severity levels the image vulnerability scan reports (default `CRITICAL,HIGH`; also settable via `DOCKSEC_DEFAULT_SEVERITY`). Invalid values are rejected with a clear error.
 
 ### Changed
 - **Cleaner terminal output**: internal logs now write to `stderr` instead of `stdout` and stay quiet in CLI mode, so raw location-tagged log lines no longer interleave with the tool's user-facing messages. Set `DOCKSEC_LOG_LEVEL` to restore verbose logging.
