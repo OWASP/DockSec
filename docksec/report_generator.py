@@ -19,14 +19,15 @@ import warnings
 from datetime import datetime
 from typing import Dict, List, Optional
 
-# fpdf2 emits a UserWarning at import time when the legacy PyFPDF package shares
-# the same module namespace. It is environmental noise that is not actionable
-# from a normal DockSec run, so suppress that specific message.
-warnings.filterwarnings("ignore", message=r".*PyFPDF & fpdf2.*")
-from fpdf import FPDF
-
 from docksec.config import RESULTS_DIR, get_html_template
 from docksec.utils import get_custom_logger
+
+# fpdf2 emits a UserWarning at import time when the legacy PyFPDF package shares
+# the same module namespace. It is environmental noise that is not actionable
+# from a normal DockSec run, so install the filter before importing fpdf. The
+# import must follow this statement, hence the E402 exemption.
+warnings.filterwarnings("ignore", message=r".*PyFPDF & fpdf2.*")
+from fpdf import FPDF  # noqa: E402
 
 # Initialize logger
 logger = get_custom_logger(__name__)

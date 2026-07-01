@@ -78,7 +78,7 @@ class TestUtils(unittest.TestCase):
         import logging
         from docksec.utils import get_custom_logger
 
-        logger = get_custom_logger('TestLoggerHandlers')
+        get_custom_logger('TestLoggerHandlers')  # first call installs one handler
         logger = get_custom_logger('TestLoggerHandlers')  # second call, same name
         stream_handlers = [h for h in logger.handlers
                            if isinstance(h, logging.StreamHandler)]
