@@ -7,6 +7,7 @@ from datetime import datetime
 import sys
 import re
 from pathlib import Path
+from docksec import output as ui  # aliased; a local var named `output` is used below
 from docksec.config import RESULTS_DIR, docker_score_prompt
 from docksec.enums import Severity
 from docksec.utils import ScoreResponse, get_llm, print_section, get_custom_logger
@@ -177,7 +178,7 @@ class DockerSecurityScanner:
             vulnerabilities: List of vulnerability dictionaries
         """
         if not vulnerabilities:
-            print("[SUCCESS] No vulnerabilities found.")
+            ui.success("No vulnerabilities found.")
             return
         
         severity_counts = defaultdict(int)
@@ -195,17 +196,17 @@ class DockerSecurityScanner:
             if count > 0:
                 summary_parts.append(f"{severity}: {count}")
         
-        print(f"  [VULNERABILITIES] {' | '.join(summary_parts)} | Total: {total}")
+        ui.detail(f"  Vulnerabilities: {' | '.join(summary_parts)} | Total: {total}")
         
         # Show top 3 critical/high only
         critical_high = [v for v in vulnerabilities if v.get('Severity') in [Severity.CRITICAL, Severity.HIGH]]
         if critical_high:
-            print("  Top Issues:")
+            ui.detail("  Top issues:")
             for i, vuln in enumerate(critical_high[:3], 1):
                 title = vuln.get('Title', 'N/A')
                 if title and len(title) > 60:
                     title = title[:57] + "..."
-                print(f"    • [{vuln.get('Severity')}] {vuln.get('VulnerabilityID', 'N/A')}: {title}")
+                ui.detail(f"    - [{vuln.get('Severity')}] {vuln.get('VulnerabilityID', 'N/A')}: {title}")
     
     def __init__(self, dockerfile_path: Optional[str], image_name: Optional[str], results_dir: str = RESULTS_DIR, scan_only: bool = False, skip_ai_scoring: bool = False):
         """
@@ -330,8 +331,8 @@ class DockerSecurityScanner:
         if self.use_cache:
             cached = self.cache.get(self.image_name)
             if cached:
-                print(f"[INFO] Using cached scan results for {self.image_name} (scanned at {cached.get('timestamp', 'N/A')})")
-                print("[TIP] To bypass cache, set environment variable DOCKSEC_USE_CACHE=false")
+                ui.info(f"Using cached scan results for {self.image_name} (scanned at {cached.get('timestamp', 'N/A')})")
+                ui.detail("Tip: set DOCKSEC_USE_CACHE=false to bypass the cache")
                 return cached.get('results', {})
         
         # Validate severity input
@@ -371,12 +372,12 @@ class DockerSecurityScanner:
 
         # Print final summary
         if not json_data:
-            print(f"[SUCCESS] Image scan completed for {self.image_name} (no vulnerabilities found).")
+            ui.success(f"Image scan completed for {self.image_name} (no vulnerabilities found).")
         else:
             severity_counts = defaultdict(int)
             for v in json_data:
                 severity_counts[v.get('Severity', Severity.UNKNOWN)] += 1
-            print(f"[INFO] Image scan completed for {self.image_name}. Found {len(json_data)} vulnerabilities.")
+            ui.info(f"Image scan completed for {self.image_name}. Found {len(json_data)} vulnerabilities.")
             # self._print_compact_vulnerability_summary(json_data) is already called in scan_image_json
 
         return results 
@@ -434,7 +435,6 @@ class DockerSecurityScanner:
                 - Optional[str]: Output from the scan or None if successful
         """
         logger.info(f"Starting Dockerfile scan with Hadolint: {self.dockerfile_path}")
-        print("\n=== Starting Dockerfile scan with Hadolint ===")
         try:
             result = subprocess.run(
                 ['hadolint', self.dockerfile_path],
@@ -447,14 +447,13 @@ class DockerSecurityScanner:
             if result.returncode != 0:
                 output = result.stdout if result.stdout else result.stderr
                 logger.warning(f"Hadolint found issues in {self.dockerfile_path}")
-                print("[WARNING] Dockerfile linting issues found:")
-                print(output)
-                print("\n[TIP] Run 'hadolint --help' to learn about specific rules")
-                print("   You can ignore specific rules with: hadolint --ignore DL3000 Dockerfile")
+                ui.warn("Dockerfile linting issues found:")
+                ui.detail(output)
+                ui.detail("Tip: ignore a rule with 'hadolint --ignore DL3000 <Dockerfile>'")
                 return False, output
             else:
                 logger.info("No Dockerfile linting issues found.")
-                print("[SUCCESS] No Dockerfile linting issues found.")
+                ui.success("No Dockerfile linting issues found.")
                 return True, None
                 
         except subprocess.CalledProcessError as e:
@@ -716,8 +715,8 @@ class DockerSecurityScanner:
         if self.image_name and self.use_cache:
             cached = self.cache.get(self.image_name)
             if cached:
-                print(f"[INFO] Using cached scan results for {self.image_name} (scanned at {cached.get('timestamp', 'N/A')})")
-                print("[TIP] To bypass cache, set environment variable DOCKSEC_USE_CACHE=false")
+                ui.info(f"Using cached scan results for {self.image_name} (scanned at {cached.get('timestamp', 'N/A')})")
+                ui.detail("Tip: set DOCKSEC_USE_CACHE=false to bypass the cache")
                 return cached.get('results', {})
         
         # Validate severity input
@@ -772,9 +771,9 @@ class DockerSecurityScanner:
         # Print final summary
         target_name = self.image_name if self.image_name else self.dockerfile_path
         if scan_status:
-            print(f"[SUCCESS] All security scans completed for {target_name}.")
+            ui.success(f"All security scans completed for {target_name}.")
         else:
-            print(f"[WARNING] Security scans completed for {target_name} with some issues.")
+            ui.warn(f"Security scans completed for {target_name} with some issues.")
 
         return results
 
@@ -813,19 +812,9 @@ class DockerSecurityScanner:
         from docksec.score_calculator import SecurityScoreCalculator
         calculator = SecurityScoreCalculator(skip_llm=True)
         breakdown = calculator.get_score_breakdown(results)
-        score = breakdown['overall']
-
-        print(f"Security Score: {score}/100")
-        if score >= 90:
-            print("[EXCELLENT] Excellent security posture!")
-        elif score >= 70:
-            print("[GOOD] Good security, but some improvements recommended")
-        elif score >= 50:
-            print("[FAIR] Fair security - multiple issues need attention")
-        else:
-            print("[POOR] Poor security - immediate action required")
-
-        return score
+        # The score and its rating are rendered once by the CLI summary
+        # (docksec.output.score); this method only computes the value.
+        return breakdown['overall']
 
     def get_security_score(self, results: Dict) -> float:
         """
@@ -854,11 +843,9 @@ class DockerSecurityScanner:
             
             # Send only summary, not full results dict
             score = self.score_chain.invoke({"results": vuln_summary})
-            print(f"Security Score: {score.score}")
             return score.score
         except Exception as e:
             logger.warning(f"AI scoring failed: {e}. Falling back to local scoring.")
-            print(f"AI scoring unavailable: {e}. Falling back to local scoring.")
             return self._calculate_local_score(results)
     
 def main():

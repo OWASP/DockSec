@@ -102,7 +102,18 @@ docksec --image-only -i myapp:latest
 
 # Fast scan only (no AI)
 docksec Dockerfile --scan-only
+
+# Reduce output to warnings, errors, and the result summary
+docksec Dockerfile --scan-only --quiet
+
+# Disable colored output (also honors the NO_COLOR env var)
+docksec Dockerfile --no-color
 ```
+
+Every scan ends with a result summary: a severity table, the security score with a
+rating, a "Quick take" action block, the generated reports, and a suggested next
+command. Use `--quiet` for a compact result and `--no-color` for plain output. A failed
+scan exits non-zero, so it works cleanly in shells and CI.
 
 ---
 

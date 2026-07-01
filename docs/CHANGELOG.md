@@ -13,13 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic scanning of all services defined in a docker-compose file.
 - Integration of compose findings into the existing LLM remediation and scoring pipeline.
 - `DOCKSEC_LOG_LEVEL` environment variable to override log verbosity (e.g. `DOCKSEC_LOG_LEVEL=DEBUG`) for troubleshooting.
+- **Redesigned terminal output**: a consolidated result summary with a box-drawing severity table, the security score with a color-coded rating, a "Quick take" action block highlighting the most important findings, the list of generated reports, and a suggested next command.
+- `--quiet` flag to reduce output to warnings, errors, and the result summary.
+- `--no-color` flag (also honors the `NO_COLOR` environment variable) to disable colored output.
 
 ### Changed
 - **Cleaner terminal output**: internal logs now write to `stderr` instead of `stdout` and stay quiet in CLI mode, so raw location-tagged log lines no longer interleave with the tool's user-facing messages. Set `DOCKSEC_LOG_LEVEL` to restore verbose logging.
+- The security score is now rendered once, in the result summary, instead of mid-scan.
+- Report generation runs silently and the CLI renders a single report summary from the result (removes the misleading progress bars).
+- **Honest exit codes**: a failed scan (for example, an image that is not found) now exits non-zero instead of ending with "Analysis complete!".
 
 ### Fixed
 - **PDF report encoding**: PDF generation no longer fails on non-latin-1 characters (bullets, smart quotes, em dashes, emoji) in vulnerability titles, scanner output, or AI findings; such characters are sanitized consistently across the whole document.
 - Suppressed the noisy `PyFPDF & fpdf2` import warning that printed on every run.
+- Fixed report progress output that printed each step twice and out of order (caused by mixing `print()` with a live progress display).
 
 ### Removed
 - Removed the unused `-o/--output` CLI flag, which was declared but never wired up.
