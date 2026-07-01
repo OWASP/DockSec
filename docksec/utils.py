@@ -63,15 +63,34 @@ from openai import (
 
 def get_custom_logger(name: str = 'Docksec', user_facing: bool = False):
     logger = logging.getLogger(name)
-    # Check for environment variable to control log level (used by CLI)
+
+    # Resolve the log level.
+    # Priority: explicit DOCKSEC_LOG_LEVEL override, then context defaults.
+    # In CLI mode the tool prints its own user-facing [INFO]/[WARNING]/[ERROR]
+    # messages, so the raw logger stays quiet (ERROR) to avoid cluttering output
+    # with duplicated, location-tagged log lines. Library/programmatic use keeps
+    # the more verbose INFO default.
     cli_mode = os.getenv("DOCKSEC_CLI_MODE", "false").lower() == "true"
-    log_level = logging.WARNING if (user_facing or cli_mode) else logging.INFO
+    override = os.getenv("DOCKSEC_LOG_LEVEL")
+    if override:
+        log_level = getattr(logging, override.strip().upper(), logging.INFO)
+    elif user_facing or cli_mode:
+        log_level = logging.ERROR
+    else:
+        log_level = logging.INFO
+
     logger.setLevel(log_level)
+    # Logs go to stderr so stdout stays clean for user-facing output and any
+    # machine-readable results piped to other tools.
     formatter = logging.Formatter('%(levelname)s - %(name)s - Line %(lineno)d: %(message)s')
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(log_level)
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+    # Don't propagate to the root logger; prevents duplicate emission.
+    logger.propagate = False
 
     return logger
 
