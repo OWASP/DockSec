@@ -14,18 +14,77 @@ class TestUtils(unittest.TestCase):
     
     def test_get_custom_logger(self):
         """Test logger creation."""
+        import logging
         from docksec.utils import get_custom_logger
-        
-        # Clear CLI mode to ensure default behavior
+
+        # Clear CLI mode and level override to ensure default behavior
         old_cli_mode = os.environ.pop("DOCKSEC_CLI_MODE", None)
+        old_level = os.environ.pop("DOCKSEC_LOG_LEVEL", None)
         try:
             logger = get_custom_logger('TestLogger')
             self.assertEqual(logger.name, 'TestLogger')
-            self.assertEqual(logger.level, 20)  # INFO level
+            self.assertEqual(logger.level, logging.INFO)
         finally:
             # Restore environment
             if old_cli_mode:
                 os.environ["DOCKSEC_CLI_MODE"] = old_cli_mode
+            if old_level:
+                os.environ["DOCKSEC_LOG_LEVEL"] = old_level
+
+    def test_get_custom_logger_cli_mode_is_quiet(self):
+        """In CLI mode the raw logger stays at ERROR so it doesn't duplicate
+        the tool's own user-facing messages."""
+        import logging
+        from docksec.utils import get_custom_logger
+
+        old_cli_mode = os.environ.get("DOCKSEC_CLI_MODE")
+        old_level = os.environ.pop("DOCKSEC_LOG_LEVEL", None)
+        os.environ["DOCKSEC_CLI_MODE"] = "true"
+        try:
+            logger = get_custom_logger('TestLoggerCli')
+            self.assertEqual(logger.level, logging.ERROR)
+        finally:
+            if old_cli_mode is None:
+                os.environ.pop("DOCKSEC_CLI_MODE", None)
+            else:
+                os.environ["DOCKSEC_CLI_MODE"] = old_cli_mode
+            if old_level:
+                os.environ["DOCKSEC_LOG_LEVEL"] = old_level
+
+    def test_get_custom_logger_level_override(self):
+        """DOCKSEC_LOG_LEVEL overrides the context default, even in CLI mode."""
+        import logging
+        from docksec.utils import get_custom_logger
+
+        old_cli_mode = os.environ.get("DOCKSEC_CLI_MODE")
+        old_level = os.environ.get("DOCKSEC_LOG_LEVEL")
+        os.environ["DOCKSEC_CLI_MODE"] = "true"
+        os.environ["DOCKSEC_LOG_LEVEL"] = "debug"
+        try:
+            logger = get_custom_logger('TestLoggerOverride')
+            self.assertEqual(logger.level, logging.DEBUG)
+        finally:
+            for key, val in (("DOCKSEC_CLI_MODE", old_cli_mode),
+                             ("DOCKSEC_LOG_LEVEL", old_level)):
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
+    def test_get_custom_logger_streams_to_stderr_without_duplicates(self):
+        """Logs go to stderr (keeping stdout clean) and repeated calls for the
+        same logger name must not stack duplicate handlers."""
+        import sys
+        import logging
+        from docksec.utils import get_custom_logger
+
+        get_custom_logger('TestLoggerHandlers')  # first call installs one handler
+        logger = get_custom_logger('TestLoggerHandlers')  # second call, same name
+        stream_handlers = [h for h in logger.handlers
+                           if isinstance(h, logging.StreamHandler)]
+        self.assertEqual(len(stream_handlers), 1)
+        self.assertIs(stream_handlers[0].stream, sys.stderr)
+        self.assertFalse(logger.propagate)
     
     def test_load_docker_file(self):
         """Test Dockerfile loading."""

@@ -15,13 +15,19 @@ import csv
 import json
 import os
 import re
+import warnings
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fpdf import FPDF
-
 from docksec.config import RESULTS_DIR, get_html_template
 from docksec.utils import get_custom_logger
+
+# fpdf2 emits a UserWarning at import time when the legacy PyFPDF package shares
+# the same module namespace. It is environmental noise that is not actionable
+# from a normal DockSec run, so install the filter before importing fpdf. The
+# import must follow this statement, hence the E402 exemption.
+warnings.filterwarnings("ignore", message=r".*PyFPDF & fpdf2.*")
+from fpdf import FPDF  # noqa: E402
 
 # Initialize logger
 logger = get_custom_logger(__name__)
@@ -203,9 +209,16 @@ class ReportGenerator:
                     self.set_auto_page_break(True, margin=15)
 
                 @staticmethod
-                def _safe(text: str) -> str:
+                def _safe(text) -> str:
+                    # Core fpdf fonts (helvetica/courier) only encode latin-1.
+                    # Map the common typographic characters to ASCII equivalents
+                    # and replace anything else that is out of range so PDF
+                    # generation never raises UnicodeEncodeError on scanner
+                    # output, vulnerability titles, or AI findings.
+                    if text is None:
+                        return ""
                     return (
-                        text
+                        str(text)
                         .replace("—", "--")
                         .replace("–", "-")
                         .replace("‘", "'")
@@ -213,9 +226,16 @@ class ReportGenerator:
                         .replace("“", '"')
                         .replace("”", '"')
                         .replace("…", "...")
+                        .replace("•", "-")
                         .encode("latin-1", errors="replace")
                         .decode("latin-1")
                     )
+
+                def cell(self, w=0, h=0, text="", *args, **kwargs):
+                    return super().cell(w, h, self._safe(text), *args, **kwargs)
+
+                def multi_cell(self, w=0, h=0, text="", *args, **kwargs):
+                    return super().multi_cell(w, h, self._safe(text), *args, **kwargs)
 
                 def multi_cell_with_title(self, title, content, title_w=40):
                     """Create title-content pair with multi-line support"""

@@ -85,6 +85,17 @@ class TestCLI(unittest.TestCase):
                 # Check that help was printed (sys.exit called for help)
                 mock_exit.assert_called()
     
+    @patch('sys.argv', ['docksec', 'Dockerfile', '-o', 'out.txt'])
+    def test_removed_output_flag_is_rejected(self):
+        """The unused -o/--output flag was removed; argparse must reject it."""
+        from docksec.cli import main
+
+        with patch('builtins.print'):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        # argparse exits with code 2 on unrecognized arguments
+        self.assertEqual(ctx.exception.code, 2)
+
     def test_compact_output_env_var_set(self):
         """Test that DOCKSEC_COMPACT_OUTPUT env var controls output."""
         with patch.dict(os.environ, {'DOCKSEC_COMPACT_OUTPUT': 'true'}):

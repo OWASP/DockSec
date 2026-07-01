@@ -44,7 +44,6 @@ def main() -> None:
     parser.add_argument('dockerfile', nargs='?', help='Path to the Dockerfile to analyze (optional when using --image-only or --compose)')
     parser.add_argument('-i', '--image', help='Docker image name to scan')
     parser.add_argument('-c', '--compose', nargs='?', const='auto', help='Path to docker-compose file to scan. If no path is provided, auto-detects in current directory.')
-    parser.add_argument('-o', '--output', help='Output file for the report (default: security_report.txt)')
     parser.add_argument('--ai-only', action='store_true', help='Run only AI-based recommendations (requires Dockerfile)')
     parser.add_argument('--scan-only', action='store_true', help='Run only Dockerfile/image scanning (requires --image)')
     parser.add_argument('--image-only', action='store_true', help='Scan only the Docker image without Dockerfile analysis')

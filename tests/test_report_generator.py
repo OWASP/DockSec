@@ -170,6 +170,47 @@ def test_pdf_no_exception_on_valid_input(
     rg.generate_pdf_report(results)
 
 
+def test_pdf_handles_non_latin1_characters(tmp_path, sample_scan_info):
+    """Core fpdf fonts only encode latin-1; report text must be sanitized so
+    bullets, smart quotes, em dashes, and emoji never raise UnicodeEncodeError."""
+    tricky = [
+        {
+            "VulnerabilityID": "CVE-2024-9999",
+            "Severity": "CRITICAL",
+            "PkgName": "openssl",
+            "InstalledVersion": "1.0.0",
+            "Title": "Heap overflow — smart quotes ‘x’ bullet • emoji \U0001f525",
+            "CVSS": 9.8,
+            "Status": "affected",
+            "Target": "image",
+            "PrimaryURL": "",
+        }
+    ]
+    results = make_results(tricky, sample_scan_info)
+    results["dockerfile_scan"] = {
+        "skipped": False,
+        "success": False,
+        "output": "Dockerfile line with unicode ✓ and accent é",
+    }
+    results["config_analysis"] = {
+        "high_risk": ["Running as root • privileged"],
+        "medium_risk": [],
+        "low_risk": [],
+    }
+    results["ai_findings"] = {
+        "vulnerabilities": ["Hardcoded key — leaked"],
+        "best_practices": [],
+        "security_risks": [],
+        "exposed_credentials": [],
+        "remediation": ["Use secrets…"],
+    }
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    rg.set_analysis_score(75.0)
+    output_path = rg.generate_pdf_report(results)
+    assert output_path, "PDF generation returned empty path (it likely raised)"
+    assert os.path.getsize(output_path) > 0
+
+
 # ---------- HTML REPORT TESTS ----------
 
 
