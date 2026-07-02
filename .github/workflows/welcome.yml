@@ -1,0 +1,31 @@
+name: Welcome First-Time Contributors
+
+on:
+  issues:
+    types:
+      - opened
+  pull_request_target:
+    types:
+      - opened
+
+permissions: {}
+
+jobs:
+  welcome:
+    permissions:
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@1d02526d949a90f18ba22cd8c1e7cddd97ba6ee8 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: >
+            Thanks for opening your first issue in DockSec! A maintainer will take a
+            look soon. In the meantime, please make sure you've included enough detail
+            to reproduce the problem — see CONTRIBUTING.md for guidelines.
+          pr-message: >
+            Thanks for your first pull request to DockSec! Please make sure the test
+            suite passes and take a look at CONTRIBUTING.md if you haven't already.
+            A maintainer will review this shortly.
+    timeout-minutes: 5

@@ -1,0 +1,57 @@
+cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docksec/cli.py
+
+core:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docksec/docker_scanner.py
+          - docksec/compose_scanner.py
+          - docksec/score_calculator.py
+          - docksec/baseline.py
+          - docksec/utils.py
+          - docksec/enums.py
+
+reports:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docksec/report_generator.py
+          - docksec/templates/**
+
+config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docksec/config.py
+          - docksec/config_manager.py
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - Dockerfile
+          - action.yml
+          - entrypoint.sh
+          - examples/compose/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - docs/**
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - requirements.txt
+          - setup.py
+          - pyproject.toml
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**
