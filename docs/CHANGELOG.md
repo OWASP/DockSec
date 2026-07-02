@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI-friendly exit codes: `0` clean, `1` findings at or above `--fail-on`, `2` usage/argument error, `3` tool or runtime error (scan failed, image not found, missing tools).
 - `--format` flag to choose which report formats are written (`json`, `csv`, `pdf`, `html`; default: all). Invalid values are rejected with a clear error.
 - `--output-dir` flag to write reports to a specific directory for the run (default: `~/.docksec/results` or `DOCKSEC_RESULTS_DIR`).
+- `--json` flag: print scan results as a single JSON object to stdout for scripts and CI pipelines. All human-readable output (banner, sections, info/warn/error, the result summary) moves to stderr in `--json` mode, so stdout carries only the JSON payload. `--json` alone does not write report files; combine with `--format` to also write files.
 
 ### Changed
 - **Cleaner terminal output**: internal logs now write to `stderr` instead of `stdout` and stay quiet in CLI mode, so raw location-tagged log lines no longer interleave with the tool's user-facing messages. Set `DOCKSEC_LOG_LEVEL` to restore verbose logging.

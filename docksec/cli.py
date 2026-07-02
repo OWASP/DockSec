@@ -56,6 +56,7 @@ def main() -> None:
     parser.add_argument('--fail-on', dest='fail_on', metavar='SEVERITY', help='Exit with code 1 if any finding is at or above this severity (CRITICAL, HIGH, MEDIUM, or LOW)')
     parser.add_argument('--format', dest='format', help='Comma-separated report formats to write: json, csv, pdf, html (default: all)')
     parser.add_argument('--output-dir', dest='output_dir', metavar='DIR', help='Directory to write reports to (default: ~/.docksec/results or DOCKSEC_RESULTS_DIR)')
+    parser.add_argument('--json', dest='json_stdout', action='store_true', help='Print scan results as JSON to stdout (no report files unless --format is also given)')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -69,7 +70,7 @@ def main() -> None:
         # Every Rich console (including the AI-findings console in utils) honors
         # NO_COLOR, so set it before those modules are imported.
         os.environ["NO_COLOR"] = "1"
-    output.configure(quiet=args.quiet, no_color=no_color)
+    output.configure(quiet=args.quiet, no_color=no_color, json_mode=args.json_stdout)
 
     # Set provider and model from CLI args if provided (overrides env vars)
     if args.provider:
@@ -130,6 +131,11 @@ def main() -> None:
             sys.exit(2)
         # Preserve a stable order and drop duplicates.
         report_formats = [f for f in valid_formats if f in requested]
+    elif args.json_stdout:
+        # --json alone means "just print JSON to stdout" - it does not also
+        # write the report file bundle unless the user explicitly asks via
+        # --format. Passing an empty list writes nothing.
+        report_formats = []
     output_dir = args.output_dir or RESULTS_DIR
 
     # Validate argument combinations
@@ -331,14 +337,20 @@ def main() -> None:
             # Generate reports (all formats by default, or the requested subset)
             report_paths = scanner.generate_all_reports(results, formats=report_formats)
 
-            # Run advanced scan if available and image is provided (skip for compose)
-            if hasattr(scanner, 'advanced_scan') and args.image and not run_compose_analysis:
+            # Run advanced scan if available and image is provided (skip for compose
+            # and for --json, since Docker Scout output is not part of the payload
+            # and would otherwise print to stdout alongside it)
+            if hasattr(scanner, 'advanced_scan') and args.image and not run_compose_analysis \
+                    and not args.json_stdout:
                 output.section("Advanced scan (Docker Scout)")
                 scanner.advanced_scan()
 
             scan_ok = True
-            _render_scan_summary(output, args, scanner, results, report_paths,
-                                 run_ai, run_compose_analysis)
+            if args.json_stdout:
+                _print_json_results(results, scanner, report_paths)
+            else:
+                _render_scan_summary(output, args, scanner, results, report_paths,
+                                     run_ai, run_compose_analysis)
 
             # --fail-on gate: flag findings at or above the chosen threshold.
             if args.fail_on:
@@ -372,6 +384,38 @@ def main() -> None:
 
     if gate_triggered:
         sys.exit(1)
+
+
+def _print_json_results(results, scanner, report_paths):
+    """Print scan results as a single JSON object to stdout.
+
+    Mirrors the shape ReportGenerator.generate_json_report writes to disk, so
+    --json and the JSON report file stay consistent. stdout carries only this
+    payload; all human-readable output goes to stderr in --json mode (see
+    docksec.output.configure).
+    """
+    import json as json_module
+
+    from docksec import output
+
+    vulnerabilities = results.get("json_data", [])
+    payload = {
+        "scan_info": {
+            "image": scanner.image_name,
+            "dockerfile": results.get("dockerfile_path", "N/A"),
+            "scan_time": results.get("timestamp", ""),
+            "analysis_score": getattr(scanner, "analysis_score", None),
+            "scan_mode": results.get("scan_mode", "full"),
+        },
+        "vulnerabilities": vulnerabilities,
+        "severity_counts": output.count_by_severity(vulnerabilities),
+    }
+    if "ai_findings" in results:
+        payload["ai_analysis"] = results["ai_findings"]
+    if report_paths:
+        payload["report_files"] = {fmt: path for fmt, path in report_paths.items() if path}
+
+    print(json_module.dumps(payload, indent=2))
 
 
 def _render_scan_summary(output, args, scanner, results, report_paths,

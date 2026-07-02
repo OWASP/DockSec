@@ -112,6 +112,9 @@ docksec -i myapp:latest --image-only --fail-on high
 # Write only the report formats you want, to a directory of your choice
 docksec Dockerfile --scan-only --format json,html --output-dir ./reports
 
+# Print results as JSON to stdout for scripts and CI pipelines
+docksec -i myapp:latest --image-only --json
+
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 
@@ -122,6 +125,20 @@ docksec Dockerfile --no-color
 Every scan ends with a result summary: a severity table, the security score with a
 rating, a "Quick take" action block, the generated reports, and a suggested next
 command. Use `--quiet` for a compact result and `--no-color` for plain output.
+
+### Machine-readable output
+
+`--json` prints a single JSON object to stdout (scan info, vulnerabilities, severity
+counts, and any AI findings) instead of the human-readable summary, so it can be piped
+straight into other tools:
+
+```bash
+docksec -i myapp:latest --image-only --json | jq '.severity_counts'
+```
+
+With `--json` alone, no report files are written; combine it with `--format` to write
+files and print JSON in the same run. All human-readable messages (info, warnings,
+errors) move to stderr in `--json` mode, so stdout only ever contains the JSON payload.
 
 ### Exit codes
 
