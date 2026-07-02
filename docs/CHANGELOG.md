@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.7.2] - 2026-07-02
+
+### Fixed
+
+- **Scan cache ignored `--severity`**: `ScanResultsCache` keyed cached results by image name only, so scanning an image at a narrow severity (e.g. `CRITICAL`) and then re-scanning the same image at a wider severity (e.g. `CRITICAL,HIGH,MEDIUM`) silently served the stale, narrower cached result instead of re-scanning, dropping HIGH/MEDIUM findings from the report. The cache key now includes the normalized severity list.
+- **AI analysis failures exited 0**: an exception during the AI analysis pass (bad provider/API key, model error) printed `error AI analysis failed: ...` but still exited `0`, contradicting the documented exit-code contract. AI failures now exit `3` (tool/runtime error), matching scan failures.
+- **HTML report crashed on a null vulnerability title**: Trivy can return `"Title": null` for some findings; the HTML report writer called `len()` on that field unconditionally and crashed generation for the whole report, silently dropping HTML off the report list whenever a scan hit one of these findings. Vulnerability ID, package name, installed version, and title are now null-safe in the HTML report.
+- **`--compose --scan-only` printed an unrelated Dockerfile message**: "No image provided for scan-only mode. Running Dockerfile analysis only." fired for any `--scan-only` run without `--image`, including pure `--compose` runs where no Dockerfile is involved. Now scoped to non-compose runs.
+- **Compose vulnerability findings could be invisible to the security score**: when every per-service image scan in a compose file failed (e.g. images not pulled locally), the score calculator treated the vulnerabilities axis as unmeasured and excluded it from the weighted average, even though compose static-misconfiguration findings (privileged mode, host network, etc.) were present. A compose file with multiple CRITICAL findings could score "GOOD". The vulnerabilities axis is now always included whenever findings exist, regardless of whether the image-scan sub-check ran.
+- **Security score understated hardcoded credential exposure**: a Dockerfile with hardcoded secrets, no `USER` directive, and other severe misconfigurations could still land in the mid-40s ("POOR" but not alarming) because the blended dockerfile/vulnerabilities/configuration average diluted the credential-exposure penalty. The overall score is now capped at 20/100 whenever a hardcoded credential-looking `ENV` variable (password/secret/API key/token) is detected in the Dockerfile.
+
 ### Added
 - Docker Compose security scanning support (`--compose` flag).
 - Detection for compose-level misconfigurations (e.g., privileged mode, host network, missing resource limits).

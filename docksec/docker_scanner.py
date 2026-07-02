@@ -41,20 +41,22 @@ class ScanResultsCache:
         except IOError as e:
             logger.warning(f"Failed to save cache: {e}")
     
-    def get_key(self, image_name: str) -> str:
-        """Generate cache key from image name."""
-        return hashlib.md5(image_name.encode()).hexdigest()
-    
-    def get(self, image_name: str) -> Optional[Dict]:
-        """Get cached results for an image."""
-        key = self.get_key(image_name)
+    def get_key(self, image_name: str, severity: str = "CRITICAL,HIGH") -> str:
+        """Generate cache key from image name and severity filter."""
+        normalized_severity = ",".join(sorted(s.strip().upper() for s in severity.split(",")))
+        return hashlib.md5(f"{image_name}|{normalized_severity}".encode()).hexdigest()
+
+    def get(self, image_name: str, severity: str = "CRITICAL,HIGH") -> Optional[Dict]:
+        """Get cached results for an image scanned at a given severity."""
+        key = self.get_key(image_name, severity)
         return self.cache.get(key)
-    
-    def set(self, image_name: str, results: Dict) -> None:
-        """Cache scan results for an image."""
-        key = self.get_key(image_name)
+
+    def set(self, image_name: str, results: Dict, severity: str = "CRITICAL,HIGH") -> None:
+        """Cache scan results for an image scanned at a given severity."""
+        key = self.get_key(image_name, severity)
         self.cache[key] = {
             "image": image_name,
+            "severity": severity,
             "timestamp": datetime.now().isoformat(),
             "results": results
         }
@@ -327,16 +329,17 @@ class DockerSecurityScanner:
         Returns:
             Dictionary containing scan results
         """
+        # Validate severity input
+        severity = self._validate_severity(severity)
+
         # Check cache first
         if self.use_cache:
-            cached = self.cache.get(self.image_name)
+            cached = self.cache.get(self.image_name, severity)
             if cached:
                 ui.info(f"Using cached scan results for {self.image_name} (scanned at {cached.get('timestamp', 'N/A')})")
                 ui.detail("Tip: set DOCKSEC_USE_CACHE=false to bypass the cache")
                 return cached.get('results', {})
-        
-        # Validate severity input
-        severity = self._validate_severity(severity)
+
         logger.info(f"Starting image-only scan for {self.image_name}")
         
         results = {
@@ -368,7 +371,7 @@ class DockerSecurityScanner:
 
         # Cache results
         if self.use_cache:
-            self.cache.set(self.image_name, results)
+            self.cache.set(self.image_name, results, severity)
 
         # Print final summary
         if not json_data:
@@ -711,16 +714,17 @@ class DockerSecurityScanner:
         Returns:
             Dictionary containing scan results
         """
+        # Validate severity input
+        severity = self._validate_severity(severity)
+
         # Check cache first (only if image name is provided)
         if self.image_name and self.use_cache:
-            cached = self.cache.get(self.image_name)
+            cached = self.cache.get(self.image_name, severity)
             if cached:
                 ui.info(f"Using cached scan results for {self.image_name} (scanned at {cached.get('timestamp', 'N/A')})")
                 ui.detail("Tip: set DOCKSEC_USE_CACHE=false to bypass the cache")
                 return cached.get('results', {})
-        
-        # Validate severity input
-        severity = self._validate_severity(severity)
+
         scan_status = True
         results = {
             'dockerfile_scan': {
@@ -766,7 +770,7 @@ class DockerSecurityScanner:
 
             # Cache results
             if self.use_cache:
-                self.cache.set(self.image_name, results)
+                self.cache.set(self.image_name, results, severity)
 
         # Print final summary
         target_name = self.image_name if self.image_name else self.dockerfile_path

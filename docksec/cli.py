@@ -176,7 +176,7 @@ def main() -> None:
         sys.exit(2)
     
     # In scan-only mode, if no image is provided, we'll only run Dockerfile analysis
-    if args.scan_only and not args.image:
+    if args.scan_only and not args.image and not args.compose:
         output.info("No image provided for scan-only mode. Running Dockerfile analysis only.")
     
     # Determine which tools to run
@@ -239,6 +239,7 @@ def main() -> None:
     ai_findings = None
     
     # Run the AI-based recommendation tool
+    ai_ok = None  # None = AI not run, True = success, False = failed
     if run_ai:
         output.section("AI-based Dockerfile analysis")
         try:
@@ -284,12 +285,14 @@ def main() -> None:
 
             response = analyser_chain.invoke({"filecontent": truncated_content})
             ai_findings = analyze_security(response, compact=True, report_path=output_dir)
+            ai_ok = True
 
         except ImportError as e:
             output.error(f"Required modules not found - {e}")
             sys.exit(3)
         except Exception as e:
             output.error(f"AI analysis failed: {e}")
+            ai_ok = False
     
     # Run the scanner tool
     scan_ok = None  # None = scan not run, True = success, False = failed
@@ -405,7 +408,7 @@ def main() -> None:
         output.warn("No analysis performed. Use --help for usage information.")
         sys.exit(2)
 
-    if scan_ok is False:
+    if scan_ok is False or ai_ok is False:
         sys.exit(3)
 
     if gate_triggered:
