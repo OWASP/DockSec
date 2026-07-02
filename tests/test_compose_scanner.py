@@ -140,7 +140,45 @@ def test_compose_orchestrator_offline(valid_compose_file, mocker):
     
     orchestrator = ComposeOrchestrator(valid_compose_file, scan_only=True)
     results = orchestrator.run_full_scan()
-    
+
     assert results['scan_mode'] == 'compose'
     assert results['dockerfile_scan']['success'] is True
     assert results['image_scan']['success'] is True
+    assert results['failed_services'] == []
+    assert results['scanned_services'] == 2
+
+def test_compose_orchestrator_reports_failed_services(valid_compose_file, mocker):
+    # First service (web) scans fine, second (db) fails: image not available locally
+    mock_scanner = mocker.patch('docksec.compose_scanner.DockerSecurityScanner')
+    mock_instance = mock_scanner.return_value
+    mock_instance.run_image_only_scan.side_effect = [
+        {'image_scan': {'success': True, 'output': 'Mock output'}, 'json_data': []},
+        {'image_scan': {'success': False, 'output': 'image not found locally: postgres:13'}, 'json_data': []},
+    ]
+
+    orchestrator = ComposeOrchestrator(valid_compose_file, scan_only=True)
+    results = orchestrator.run_full_scan()
+
+    assert results['scanned_services'] == 2
+    assert len(results['failed_services']) == 1
+    failure = results['failed_services'][0]
+    assert failure['service'] == 'db'
+    assert 'postgres:13' in failure['reason']
+    # The aggregate success flag still reflects the failure (scoring unchanged)
+    assert results['image_scan']['success'] is False
+
+def test_compose_orchestrator_reports_service_exception(valid_compose_file, mocker):
+    mock_scanner = mocker.patch('docksec.compose_scanner.DockerSecurityScanner')
+    mock_instance = mock_scanner.return_value
+    mock_instance.run_image_only_scan.side_effect = [
+        RuntimeError("docker daemon unreachable"),
+        {'image_scan': {'success': True, 'output': 'Mock output'}, 'json_data': []},
+    ]
+
+    orchestrator = ComposeOrchestrator(valid_compose_file, scan_only=True)
+    results = orchestrator.run_full_scan()
+
+    assert len(results['failed_services']) == 1
+    failure = results['failed_services'][0]
+    assert failure['service'] == 'web'
+    assert 'docker daemon unreachable' in failure['reason']
