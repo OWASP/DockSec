@@ -1,0 +1,19 @@
+name: Label Pull Requests
+
+on:
+  - pull_request_target
+
+permissions: {}
+
+jobs:
+  labeler:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6.1.0
+        with:
+          configuration-path: .github/pr-labeler.yml
+          sync-labels: true
+    timeout-minutes: 5
