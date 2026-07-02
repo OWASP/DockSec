@@ -389,5 +389,132 @@ class TestFailOnGate(unittest.TestCase):
         self.assertEqual(self._run_image_only_with(["CRITICAL"], None), 0)
 
 
+class TestJsonOutput(unittest.TestCase):
+    """Test cases for --json stdout output."""
+
+    def test_print_json_results_shape(self):
+        import json as json_module
+        from docksec.cli import _print_json_results
+
+        scanner = Mock()
+        scanner.image_name = "myapp:latest"
+        scanner.analysis_score = 82.5
+        results = {
+            "json_data": [{"Severity": "HIGH"}, {"Severity": "LOW"}],
+            "dockerfile_path": "Dockerfile",
+            "timestamp": "2026-01-01 00:00:00",
+            "scan_mode": "full",
+        }
+
+        printed = []
+        with patch('builtins.print', side_effect=lambda x: printed.append(x)):
+            _print_json_results(results, scanner, report_paths={})
+
+        self.assertEqual(len(printed), 1)
+        payload = json_module.loads(printed[0])
+        self.assertEqual(payload["scan_info"]["image"], "myapp:latest")
+        self.assertEqual(payload["scan_info"]["analysis_score"], 82.5)
+        self.assertEqual(len(payload["vulnerabilities"]), 2)
+        self.assertEqual(payload["severity_counts"]["HIGH"], 1)
+        self.assertNotIn("report_files", payload)
+
+    def test_print_json_results_includes_report_files_when_written(self):
+        import json as json_module
+        from docksec.cli import _print_json_results
+
+        scanner = Mock()
+        scanner.image_name = "myapp:latest"
+        scanner.analysis_score = 90
+        results = {"json_data": [], "scan_mode": "full"}
+        report_paths = {"json": "/tmp/x.json", "csv": ""}
+
+        printed = []
+        with patch('builtins.print', side_effect=lambda x: printed.append(x)):
+            _print_json_results(results, scanner, report_paths)
+
+        payload = json_module.loads(printed[0])
+        # Only non-empty paths are included.
+        self.assertEqual(payload["report_files"], {"json": "/tmp/x.json"})
+
+    def test_print_json_results_includes_ai_findings(self):
+        import json as json_module
+        from docksec.cli import _print_json_results
+
+        scanner = Mock()
+        scanner.image_name = "myapp:latest"
+        scanner.analysis_score = 90
+        results = {
+            "json_data": [],
+            "scan_mode": "full",
+            "ai_findings": {"vulnerabilities": ["hardcoded secret"]},
+        }
+
+        printed = []
+        with patch('builtins.print', side_effect=lambda x: printed.append(x)):
+            _print_json_results(results, scanner, report_paths={})
+
+        payload = json_module.loads(printed[0])
+        self.assertEqual(payload["ai_analysis"]["vulnerabilities"], ["hardcoded secret"])
+
+    def _run_image_only_json(self, extra_argv=None, findings=None):
+        """Run main() image-only with --json, capturing stdout prints."""
+        from docksec.cli import main
+
+        argv = ['docksec', '--image-only', '-i', 'test:latest', '--json'] + (extra_argv or [])
+        with patch('sys.argv', argv), \
+             patch('docksec.docker_scanner.DockerSecurityScanner') as cls:
+            scanner = Mock()
+            cls.return_value = scanner
+            scanner.image_name = "test:latest"
+            scanner.run_image_only_scan.return_value = {
+                'json_data': [{"Severity": s} for s in (findings or [])],
+                'dockerfile_scan': {'skipped': True},
+                'image_scan': {'skipped': False},
+                'scan_mode': 'image_only',
+            }
+            scanner.get_security_score.return_value = 90.0
+            scanner.generate_all_reports.return_value = {}
+            scanner.RESULTS_DIR = '/tmp'
+
+            printed = []
+            code = 0
+            with patch('builtins.print', side_effect=lambda x='': printed.append(x)):
+                try:
+                    main()
+                except SystemExit as e:
+                    code = e.code
+            return code, printed, scanner
+
+    def test_json_flag_prints_exactly_one_json_object(self):
+        import json as json_module
+
+        code, printed, _ = self._run_image_only_json(findings=["CRITICAL"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(printed), 1)
+        json_module.loads(printed[0])  # must not raise
+
+    def test_json_flag_without_format_writes_no_reports(self):
+        _, _, scanner = self._run_image_only_json()
+        scanner.generate_all_reports.assert_called_once_with({
+            'json_data': [],
+            'dockerfile_scan': {'skipped': True},
+            'image_scan': {'skipped': False},
+            'scan_mode': 'image_only',
+        }, formats=[])
+
+    def test_json_flag_with_format_passes_requested_formats(self):
+        _, _, scanner = self._run_image_only_json(extra_argv=['--format', 'json'])
+        _, kwargs = scanner.generate_all_reports.call_args
+        self.assertEqual(kwargs.get('formats'), ['json'])
+
+    def test_json_flag_respects_fail_on_exit_code(self):
+        code, printed, _ = self._run_image_only_json(
+            extra_argv=['--fail-on', 'critical'], findings=["CRITICAL"]
+        )
+        self.assertEqual(code, 1)
+        # stdout still carries exactly the JSON payload, nothing else.
+        self.assertEqual(len(printed), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

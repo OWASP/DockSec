@@ -17,6 +17,7 @@ Design notes:
   box-drawing table borders only.
 """
 
+import sys
 from typing import Dict, Iterable, List, Optional
 
 from rich.box import SQUARE
@@ -25,7 +26,7 @@ from rich.table import Table
 from rich.text import Text
 
 # Module-level state configured once by the CLI.
-_state = {"quiet": False, "no_color": False}
+_state = {"quiet": False, "no_color": False, "json_mode": False}
 _console: Optional[Console] = None
 
 # Severity display order and colors used across the summary.
@@ -37,20 +38,33 @@ _SEVERITY_STYLES = [
 ]
 
 
-def configure(quiet: bool = False, no_color: bool = False) -> None:
-    """Configure the output layer. Called once, early, by the CLI."""
+def configure(quiet: bool = False, no_color: bool = False, json_mode: bool = False) -> None:
+    """Configure the output layer. Called once, early, by the CLI.
+
+    json_mode reserves stdout for a single machine-readable JSON payload
+    (see --json). All human-readable output (banner, sections, info, warn,
+    error, the result summary) is redirected to stderr instead, so scripts
+    piping stdout never see anything but the JSON.
+    """
     _state["quiet"] = quiet
     _state["no_color"] = no_color
+    _state["json_mode"] = json_mode
     global _console
-    _console = Console(no_color=no_color, highlight=False)
+    stream = sys.stderr if json_mode else sys.stdout
+    _console = Console(file=stream, no_color=no_color, highlight=False)
 
 
 def get_console() -> Console:
     """Return the shared console, creating a default one if needed."""
     global _console
     if _console is None:
-        _console = Console(no_color=_state["no_color"], highlight=False)
+        stream = sys.stderr if _state["json_mode"] else sys.stdout
+        _console = Console(file=stream, no_color=_state["no_color"], highlight=False)
     return _console
+
+
+def is_json_mode() -> bool:
+    return bool(_state["json_mode"])
 
 
 def _line(renderable) -> None:
