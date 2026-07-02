@@ -118,6 +118,10 @@ docksec -i myapp:latest --image-only --json
 # Write a SARIF report for GitHub Code Scanning
 docksec Dockerfile --scan-only --sarif
 
+# Save today's findings as a baseline, then only gate on new findings later
+docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --update-baseline
+docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --fail-on high
+
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 
@@ -170,6 +174,26 @@ directly on pull requests and in the Security tab:
 `--sarif` is independent of `--format`: it always writes a `.sarif` file regardless of
 which report formats you've selected, since it targets CI/Code Scanning rather than
 local reading.
+
+### Baseline / ratchet mode
+
+`--baseline FILE` lets you adopt `--fail-on` on an existing project without a wall of
+pre-existing findings blocking every build. Run once with `--update-baseline` to snapshot
+today's findings, then commit the baseline file; from then on, `--fail-on` only gates on
+findings that aren't already in the baseline:
+
+```bash
+# Snapshot current findings (does not gate)
+docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --update-baseline
+
+# Later runs only fail on NEW findings above the threshold
+docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --fail-on high
+```
+
+Findings are matched by vulnerability ID, target, and package name, so the baseline stays
+valid as unrelated findings come and go. Re-run with `--update-baseline` whenever you want
+to accept the current state as the new baseline (e.g. after triaging and deciding to defer
+a finding).
 
 ### Exit codes
 

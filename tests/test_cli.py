@@ -1,5 +1,6 @@
 """Unit tests for CLI arguments and flags."""
 import unittest
+import json
 import os
 import sys
 import tempfile
@@ -570,6 +571,81 @@ class TestSarifOutput(unittest.TestCase):
         scanner = scanner_cls.return_value
         _, kwargs = scanner.generate_all_reports.call_args
         self.assertEqual(kwargs.get('formats'), ['json'])
+
+
+class TestBaselineGate(unittest.TestCase):
+    """Test cases for --baseline / --update-baseline wiring in the CLI."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.baseline_path = os.path.join(self._tmpdir.name, 'baseline.json')
+
+    def _run_image_only_with(self, findings, extra_argv=None):
+        from docksec.cli import main
+
+        argv = ['docksec', '--image-only', '-i', 'test:latest'] + (extra_argv or [])
+        with patch('sys.argv', argv), \
+             patch('docksec.docker_scanner.DockerSecurityScanner') as cls:
+            scanner = Mock()
+            cls.return_value = scanner
+            scanner.run_image_only_scan.return_value = {
+                'json_data': [
+                    {"VulnerabilityID": f"CVE-{i}", "Target": "app", "PkgName": "pkg", "Severity": s}
+                    for i, s in enumerate(findings)
+                ],
+                'dockerfile_scan': {'skipped': True},
+                'image_scan': {'skipped': False},
+                'scan_mode': 'image_only',
+            }
+            scanner.get_security_score.return_value = 80.0
+            scanner.generate_all_reports.return_value = {'json': 'x'}
+            scanner.RESULTS_DIR = '/tmp'
+            code = 0
+            try:
+                main()
+            except SystemExit as e:
+                code = e.code
+            return code
+
+    def test_update_baseline_without_baseline_flag_exits_2(self):
+        code = self._run_image_only_with(["HIGH"], ['--update-baseline'])
+        self.assertEqual(code, 2)
+
+    def test_update_baseline_writes_file_and_does_not_gate(self):
+        code = self._run_image_only_with(
+            ["CRITICAL"],
+            ['--baseline', self.baseline_path, '--update-baseline', '--fail-on', 'critical'],
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(os.path.isfile(self.baseline_path))
+        with open(self.baseline_path) as f:
+            data = json.load(f)
+        self.assertEqual(len(data['fingerprints']), 1)
+
+    def test_baseline_suppresses_previously_seen_findings(self):
+        # First run establishes the baseline.
+        self._run_image_only_with(
+            ["CRITICAL"], ['--baseline', self.baseline_path, '--update-baseline']
+        )
+        # Same finding again, now gated: should NOT trigger since it's baselined.
+        code = self._run_image_only_with(
+            ["CRITICAL"], ['--baseline', self.baseline_path, '--fail-on', 'critical']
+        )
+        self.assertEqual(code, 0)
+
+    def test_baseline_still_gates_on_new_findings(self):
+        # Baseline has no findings.
+        self._run_image_only_with([], ['--baseline', self.baseline_path, '--update-baseline'])
+        # A new CRITICAL finding appears: should trigger the gate.
+        code = self._run_image_only_with(
+            ["CRITICAL"], ['--baseline', self.baseline_path, '--fail-on', 'critical']
+        )
+        self.assertEqual(code, 1)
+
+    def test_fail_on_without_baseline_gates_normally(self):
+        code = self._run_image_only_with(["CRITICAL"], ['--fail-on', 'critical'])
+        self.assertEqual(code, 1)
 
 
 if __name__ == '__main__':

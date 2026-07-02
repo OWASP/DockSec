@@ -58,6 +58,8 @@ def main() -> None:
     parser.add_argument('--output-dir', dest='output_dir', metavar='DIR', help='Directory to write reports to (default: ~/.docksec/results or DOCKSEC_RESULTS_DIR)')
     parser.add_argument('--json', dest='json_stdout', action='store_true', help='Print scan results as JSON to stdout (no report files unless --format is also given)')
     parser.add_argument('--sarif', dest='sarif', action='store_true', help='Write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools')
+    parser.add_argument('--baseline', dest='baseline', metavar='FILE', help='Path to a baseline file; with --fail-on, only findings not present in the baseline trigger the gate')
+    parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -140,6 +142,10 @@ def main() -> None:
     output_dir = args.output_dir or RESULTS_DIR
 
     # Validate argument combinations
+    if args.update_baseline and not args.baseline:
+        output.error("--update-baseline requires --baseline FILE")
+        sys.exit(2)
+
     if args.image_only and args.ai_only:
         output.error("--image-only and --ai-only cannot be used together (AI analysis requires a Dockerfile)")
         sys.exit(2)
@@ -358,14 +364,28 @@ def main() -> None:
                 _render_scan_summary(output, args, scanner, results, report_paths,
                                      run_ai, run_compose_analysis)
 
+            # --update-baseline: snapshot current findings and skip gating.
+            if args.update_baseline:
+                from docksec import baseline as baseline_mod
+                baseline_mod.save_baseline(args.baseline, results)
+                output.info(f"Baseline written to {args.baseline}")
+
             # --fail-on gate: flag findings at or above the chosen threshold.
-            if args.fail_on:
+            # With --baseline (and not --update-baseline), only findings not
+            # already present in the baseline count toward the gate.
+            if args.fail_on and not args.update_baseline:
                 triggering = _findings_at_or_above(results, args.fail_on)
+                if args.baseline:
+                    from docksec import baseline as baseline_mod
+                    baseline_fingerprints = baseline_mod.load_baseline(args.baseline)
+                    new_ids = {baseline_mod.fingerprint(v) for v in baseline_mod.new_findings(results, baseline_fingerprints)}
+                    triggering = [v for v in triggering if baseline_mod.fingerprint(v) in new_ids]
                 if triggering:
                     gate_triggered = True
+                    suffix = " (new since baseline)" if args.baseline else ""
                     output.warn(
-                        f"{len(triggering)} finding(s) at or above {args.fail_on} "
-                        f"(--fail-on {args.fail_on}) -> exit 1"
+                        f"{len(triggering)} finding(s) at or above {args.fail_on}"
+                        f"{suffix} (--fail-on {args.fail_on}) -> exit 1"
                     )
 
         except ValueError as e:
