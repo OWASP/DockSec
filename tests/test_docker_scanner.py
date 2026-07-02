@@ -479,7 +479,8 @@ class TestDockerSecurityScanner(unittest.TestCase):
         
         self.assertEqual(report_paths['json'], "report.json")
         self.assertEqual(report_paths['html'], "report.html")
-        mock_gen.generate_all_reports.assert_called_once_with(results)
+        # Default run delegates with formats=None (all formats).
+        mock_gen.generate_all_reports.assert_called_once_with(results, formats=None)
 
     def test_calculate_local_score(self):
         """Test the local scoring logic."""

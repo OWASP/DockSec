@@ -54,6 +54,8 @@ def main() -> None:
     parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
     parser.add_argument('--severity', help='Comma-separated severity levels to scan for (default: CRITICAL,HIGH; or set DOCKSEC_DEFAULT_SEVERITY)')
     parser.add_argument('--fail-on', dest='fail_on', metavar='SEVERITY', help='Exit with code 1 if any finding is at or above this severity (CRITICAL, HIGH, MEDIUM, or LOW)')
+    parser.add_argument('--format', dest='format', help='Comma-separated report formats to write: json, csv, pdf, html (default: all)')
+    parser.add_argument('--output-dir', dest='output_dir', metavar='DIR', help='Directory to write reports to (default: ~/.docksec/results or DOCKSEC_RESULTS_DIR)')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -112,6 +114,23 @@ def main() -> None:
             severity_list = [lvl for lvl in Severity.values() if lvl in widened]
             severity = ','.join(severity_list)
             output.info(f"Widened scan severity to {severity} to satisfy --fail-on {args.fail_on}")
+
+    # Resolve report formats and output directory.
+    from docksec.config import RESULTS_DIR
+    valid_formats = ["json", "csv", "pdf", "html"]
+    report_formats = None  # None = write all formats (default)
+    if args.format:
+        requested = [f.strip().lower() for f in args.format.split(',') if f.strip()]
+        invalid_formats = [f for f in requested if f not in valid_formats]
+        if not requested or invalid_formats:
+            output.error(
+                f"Invalid --format value '{args.format}'. "
+                f"Valid formats: {', '.join(valid_formats)}"
+            )
+            sys.exit(2)
+        # Preserve a stable order and drop duplicates.
+        report_formats = [f for f in valid_formats if f in requested]
+    output_dir = args.output_dir or RESULTS_DIR
 
     # Validate argument combinations
     if args.image_only and args.ai_only:
@@ -192,12 +211,11 @@ def main() -> None:
         run_compose_analysis = False
         mode_desc = "Full Analysis (AI + Scanner)"
     
-    from docksec.config import RESULTS_DIR
     from docksec.config_manager import get_config
     from docksec.enums import LLMProvider
 
     output.banner(get_version(), mode_desc)
-    output.kv("Reports", RESULTS_DIR)
+    output.kv("Reports", output_dir)
     if run_scan:
         output.kv("Severity", severity)
     if run_ai:
@@ -218,7 +236,7 @@ def main() -> None:
                 analyze_security,
                 AnalyzesResponse
             )
-            from docksec.config import docker_agent_prompt, truncate_dockerfile, RESULTS_DIR
+            from docksec.config import docker_agent_prompt, truncate_dockerfile
             from pathlib import Path
             
             # Set up the same components as main.py
@@ -252,7 +270,7 @@ def main() -> None:
             truncated_content = truncate_dockerfile(filecontent, max_lines=150, max_chars=4000) if run_compose_analysis else truncate_dockerfile(filecontent, max_lines=50, max_chars=2000)
 
             response = analyser_chain.invoke({"filecontent": truncated_content})
-            ai_findings = analyze_security(response, compact=True, report_path=RESULTS_DIR)
+            ai_findings = analyze_security(response, compact=True, report_path=output_dir)
 
         except ImportError as e:
             output.error(f"Required modules not found - {e}")
@@ -280,7 +298,7 @@ def main() -> None:
                 results = orchestrator.run_full_scan(severity)
 
                 # We need a scanner instance just for scoring and reporting
-                scanner = DockerSecurityScanner(None, None, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring)
+                scanner = DockerSecurityScanner(None, None, results_dir=output_dir, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring)
                 scanner.image_name = "Multiple Services"
                 scanner.dockerfile_path = args.compose
             else:
@@ -289,6 +307,7 @@ def main() -> None:
                 scanner = DockerSecurityScanner(
                     dockerfile_path,
                     args.image,
+                    results_dir=output_dir,
                     scan_only=not run_ai,
                     skip_ai_scoring=args.skip_ai_scoring
                 )
@@ -309,8 +328,8 @@ def main() -> None:
             if ai_findings:
                 results["ai_findings"] = ai_findings
 
-            # Generate all reports
-            report_paths = scanner.generate_all_reports(results)
+            # Generate reports (all formats by default, or the requested subset)
+            report_paths = scanner.generate_all_reports(results, formats=report_formats)
 
             # Run advanced scan if available and image is provided (skip for compose)
             if hasattr(scanner, 'advanced_scan') and args.image and not run_compose_analysis:
