@@ -459,32 +459,32 @@ class DockerSecurityScanner:
         except subprocess.CalledProcessError as e:
             error_msg = f"Hadolint execution failed: {e}"
             logger.error(error_msg, exc_info=True)
-            print(f"\n[ERROR] Error: {error_msg}")
-            print("\nTroubleshooting steps:")
-            print("  1. Verify Hadolint is installed: hadolint --version")
-            print("  2. Check file permissions on the Dockerfile")
-            print("  3. Ensure Dockerfile syntax is valid")
+            ui.error(error_msg)
+            ui.detail("Troubleshooting steps:")
+            ui.detail("  1. Verify Hadolint is installed: hadolint --version")
+            ui.detail("  2. Check file permissions on the Dockerfile")
+            ui.detail("  3. Ensure Dockerfile syntax is valid")
             return False, str(e)
         except subprocess.TimeoutExpired:
             error_msg = "Hadolint scan timed out after 300 seconds"
             logger.error(f"{error_msg} for {self.dockerfile_path}")
-            print(f"\n[ERROR] Error: {error_msg}")
-            print("\nTroubleshooting steps:")
-            print("  1. The Dockerfile may be extremely large")
-            print("  2. Try splitting into smaller Dockerfiles")
-            print("  3. Check for infinite loops or circular dependencies")
+            ui.error(error_msg)
+            ui.detail("Troubleshooting steps:")
+            ui.detail("  1. The Dockerfile may be extremely large")
+            ui.detail("  2. Try splitting into smaller Dockerfiles")
+            ui.detail("  3. Check for infinite loops or circular dependencies")
             return False, "Scan timeout"
         except FileNotFoundError:
             error_msg = "Hadolint not found in PATH"
             logger.error(error_msg)
-            print(f"\n[ERROR] Error: {error_msg}")
-            print("\nInstallation instructions:")
-            print(self._get_tool_installation_instructions('hadolint'))
+            ui.error(error_msg)
+            ui.detail("Installation instructions:")
+            ui.detail(self._get_tool_installation_instructions('hadolint'))
             return False, error_msg
         except Exception as e:
             error_msg = f"Unexpected error during Hadolint scan: {e}"
             logger.error(error_msg, exc_info=True)
-            print(f"\n[ERROR] Error: {error_msg}")
+            ui.error(error_msg)
             return False, str(e)
     
     def _filter_scan_results(self, scan_results: Dict) -> List[Dict]:
@@ -575,7 +575,7 @@ class DockerSecurityScanner:
                 progress.update(scan_task, completed=True)
             
             if result.stderr and 'error' in result.stderr.lower() and not result.stdout:
-                print(f"[ERROR] Trivy scan failed: {result.stderr[:200]}")
+                ui.error(f"Trivy scan failed: {result.stderr[:200]}")
                 return False, None
             
             if not result.stdout:
@@ -592,17 +592,17 @@ class DockerSecurityScanner:
         except subprocess.TimeoutExpired:
             error_msg = "Trivy scan timed out after 600 seconds"
             logger.error(error_msg)
-            print(f"[ERROR] {error_msg}")
+            ui.error(error_msg)
             return False, None
         except json.JSONDecodeError as e:
             error_msg = f"Failed to parse Trivy output: {e}"
             logger.error(error_msg)
-            print(f"[ERROR] {error_msg}")
+            ui.error(error_msg)
             return False, None
         except (subprocess.CalledProcessError, Exception) as e:
             error_msg = f"Trivy scan failed: {e}"
             logger.error(error_msg, exc_info=True)
-            print(f"[ERROR] {error_msg}")
+            ui.error(error_msg)
             return False, None
 
     def scan_image(self, severity: str = "CRITICAL,HIGH") -> Tuple[bool, Optional[str]]:
@@ -644,10 +644,10 @@ class DockerSecurityScanner:
             return result.returncode == 0, result.stdout
             
         except subprocess.TimeoutExpired:
-            print("[ERROR] Trivy scan timed out after 600 seconds")
+            ui.error("Trivy scan timed out after 600 seconds")
             return False, "Scan timed out"
         except subprocess.CalledProcessError as e:
-            print(f"[ERROR] Error running Trivy scan: {e}")
+            ui.error(f"Error running Trivy scan: {e}")
             return False, str(e)
 
     def advanced_scan(self) -> Dict:
@@ -678,13 +678,13 @@ class DockerSecurityScanner:
                 if any(x in line for x in ['Target', 'Base image', 'Updated base image', 'vulnerabilities']):
                     summary_lines.append(line.strip())
             
-            print(f"  [ADVANCED] Docker Scout Summary for {self.image_name}:")
+            ui.info(f"Docker Scout Summary for {self.image_name}:")
             if summary_lines:
                 for line in summary_lines[:5]: # Show top 5 summary lines
-                    print(f"    {line}")
+                    ui.detail(f"  {line}")
             else:
                 # Fallback to a very short version of output if parsing fails
-                print(f"    {output.splitlines()[0] if output.splitlines() else 'Scan completed.'}")
+                ui.detail(f"  {output.splitlines()[0] if output.splitlines() else 'Scan completed.'}")
             
             result_dict['success'] = True
             result_dict['output'] = result.stdout
