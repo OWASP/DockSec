@@ -254,3 +254,37 @@ def test_html_special_characters_are_escaped(tmp_path):
         content = f.read()
     assert "<script>" not in content
     assert "&lt;script&gt;" in content
+
+
+# ---------- FORMAT SELECTION TESTS ----------
+
+
+def test_generate_all_reports_default_writes_all_formats(
+    tmp_path, sample_vulnerabilities, sample_scan_info
+):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results(sample_vulnerabilities, sample_scan_info)
+    paths = rg.generate_all_reports(results)
+    assert set(paths) == {"json", "csv", "pdf", "html"}
+    for path in paths.values():
+        assert os.path.exists(path)
+
+
+def test_generate_all_reports_writes_only_requested_formats(
+    tmp_path, sample_vulnerabilities, sample_scan_info
+):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results(sample_vulnerabilities, sample_scan_info)
+    paths = rg.generate_all_reports(results, formats=["json", "html"])
+    assert set(paths) == {"json", "html"}
+    # The unrequested formats must not be written to disk.
+    written = {p.rsplit(".", 1)[-1] for p in os.listdir(tmp_path)}
+    assert "csv" not in written
+    assert "pdf" not in written
+
+
+def test_generate_all_reports_empty_formats_writes_nothing(tmp_path, sample_scan_info):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results([], sample_scan_info)
+    paths = rg.generate_all_reports(results, formats=[])
+    assert paths == {}

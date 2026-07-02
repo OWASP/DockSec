@@ -196,6 +196,46 @@ class TestCLI(unittest.TestCase):
         # 'critical' is normalized to 'CRITICAL' and passed to the image scan.
         scanner.run_image_only_scan.assert_called_once_with('CRITICAL')
 
+    @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--format', 'json,xml'])
+    def test_invalid_format_exits_2(self):
+        """An unknown --format value is a usage error and exits 2."""
+        from docksec.cli import main
+
+        with patch('builtins.print'):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        self.assertEqual(ctx.exception.code, 2)
+
+    @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest',
+                        '--format', 'html,json', '--output-dir', '/tmp/docksec_test_out'])
+    @patch('docksec.docker_scanner.DockerSecurityScanner')
+    def test_format_and_output_dir_thread_to_reports(self, mock_scanner_class):
+        """--format (normalized/ordered) and --output-dir reach the report call
+        and the scanner construction."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        mock_scanner_class.return_value = scanner
+        scanner.run_image_only_scan.return_value = {
+            'json_data': [],
+            'dockerfile_scan': {'skipped': True},
+            'image_scan': {'skipped': False},
+            'scan_mode': 'image_only',
+        }
+        scanner.get_security_score.return_value = 90.0
+        scanner.generate_all_reports.return_value = {'json': 'x'}
+        scanner.RESULTS_DIR = '/tmp/docksec_test_out'
+
+        main()
+
+        # --output-dir is passed to the scanner as results_dir.
+        _, kwargs = mock_scanner_class.call_args
+        self.assertEqual(kwargs.get('results_dir'), '/tmp/docksec_test_out')
+
+        # --format is normalized to canonical order json,html and passed through.
+        _, gen_kwargs = scanner.generate_all_reports.call_args
+        self.assertEqual(gen_kwargs.get('formats'), ['json', 'html'])
+
     @patch('sys.argv', ['docksec', '--image-only', '-i', 'docksec_missing_img_xyz:latest', '--quiet', '--no-color'])
     def test_quiet_and_no_color_flags_are_accepted(self):
         """--quiet and --no-color must parse. Using a missing image makes the run

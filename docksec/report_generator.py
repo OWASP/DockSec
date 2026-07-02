@@ -785,28 +785,31 @@ class ReportGenerator:
                 severity_counts["UNKNOWN"] += 1
         return severity_counts
 
-    def generate_all_reports(self, results: Dict) -> Dict[str, str]:
+    def generate_all_reports(self, results: Dict, formats=None) -> Dict[str, str]:
         """
-        Generate all report formats.
+        Generate report formats.
 
-        Writing four files is effectively instant, so this runs silently and
-        returns the written paths; the CLI renders a single report summary from
-        the return value (see docksec.output.report_results).
+        Writing files is effectively instant, so this runs silently and returns
+        the written paths; the CLI renders a single report summary from the
+        return value (see docksec.output.report_results).
 
         Args:
             results: Scan results dictionary
+            formats: Iterable of formats to write ('json', 'csv', 'pdf', 'html').
+                     When None, all four formats are written.
 
         Returns:
-            Dictionary mapping format to file path
+            Dictionary mapping the requested format(s) to their file path
         """
-        logger.info("Generating all report formats")
-
-        report_paths = {
-            "json": self.generate_json_report(results),
-            "csv": self.generate_csv_report(results),
-            "pdf": self.generate_pdf_report(results),
-            "html": self.generate_html_report(results),
+        writers = {
+            "json": self.generate_json_report,
+            "csv": self.generate_csv_report,
+            "pdf": self.generate_pdf_report,
+            "html": self.generate_html_report,
         }
+        selected = list(writers) if formats is None else [f for f in writers if f in formats]
 
-        logger.info(f"All reports generated: {report_paths}")
+        logger.info(f"Generating report formats: {', '.join(selected) or 'none'}")
+        report_paths = {fmt: writers[fmt](results) for fmt in selected}
+        logger.info(f"Reports generated: {report_paths}")
         return report_paths

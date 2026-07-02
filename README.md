@@ -109,6 +109,9 @@ docksec -i myapp:latest --image-only --severity CRITICAL,HIGH,MEDIUM
 # Fail the build (exit 1) if any finding is HIGH or above
 docksec -i myapp:latest --image-only --fail-on high
 
+# Write only the report formats you want, to a directory of your choice
+docksec Dockerfile --scan-only --format json,html --output-dir ./reports
+
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 

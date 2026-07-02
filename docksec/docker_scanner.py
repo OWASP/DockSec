@@ -777,29 +777,31 @@ class DockerSecurityScanner:
 
         return results
 
-    def generate_all_reports(self, results: Dict) -> Dict:
+    def generate_all_reports(self, results: Dict, formats=None) -> Dict:
         """
-        Generate all report formats (JSON, CSV, PDF, HTML) from scan results.
-        
+        Generate report formats (JSON, CSV, PDF, HTML) from scan results.
+
         Args:
             results: The scan results to save
-            
+            formats: Optional iterable of formats to write ('json', 'csv', 'pdf',
+                     'html'). When None, all four formats are written.
+
         Returns:
             Dictionary with paths to the generated reports
         """
         from docksec.report_generator import ReportGenerator
-        
+
         # Calculate security score if not already set
         if self.analysis_score is None:
             self.analysis_score = self.get_security_score(results)
-        
+
         # Initialize report generator
         generator = ReportGenerator(self.image_name or "docksec_report", self.RESULTS_DIR)
         generator.set_analysis_score(self.analysis_score)
-        
-        # Generate all reports using the dedicated generator
-        report_paths = generator.generate_all_reports(results)
-        
+
+        # Generate the requested reports using the dedicated generator
+        report_paths = generator.generate_all_reports(results, formats=formats)
+
         return report_paths
     
     def _calculate_local_score(self, results: Dict) -> float:
