@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Cleaner terminal output**: internal logs now write to `stderr` instead of `stdout` and stay quiet in CLI mode, so raw location-tagged log lines no longer interleave with the tool's user-facing messages. Set `DOCKSEC_LOG_LEVEL` to restore verbose logging.
+- `docker_scanner.py`'s Hadolint/Trivy/Docker Scout error and troubleshooting messages now route through `docksec.output` instead of raw `print()`, so they're consistently styled and honor `--quiet`/`--no-color`/`--json` like the rest of the tool's output.
 - The security score is now rendered once, in the result summary, instead of mid-scan.
 - Report generation runs silently and the CLI renders a single report summary from the result (removes the misleading progress bars).
 - **Honest exit codes**: a failed scan (for example, an image that is not found) now exits non-zero instead of ending with "Analysis complete!".
