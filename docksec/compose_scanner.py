@@ -326,6 +326,16 @@ class ComposeScanner:
             return {}
         return self.data.get('services', {})
 
+def _failure_reason(output: Any, fallback: str) -> str:
+    """Condense scanner output into a single short reason line."""
+    if isinstance(output, str) and output.strip():
+        first_line = output.strip().splitlines()[0]
+        if len(first_line) > 120:
+            first_line = first_line[:117] + "..."
+        return first_line
+    return fallback
+
+
 class ComposeOrchestrator:
     def __init__(self, compose_path: str, scan_only: bool = False, skip_ai_scoring: bool = False):
         self.compose_path = compose_path
@@ -342,7 +352,9 @@ class ComposeOrchestrator:
                 'timestamp': "",
                 'image_name': "N/A",
                 'dockerfile_path': self.compose_path,
-                'scan_mode': 'compose'
+                'scan_mode': 'compose',
+                'failed_services': [],
+                'scanned_services': 0
             }
             
         compose_findings = self.scanner.scan()
@@ -353,7 +365,9 @@ class ComposeOrchestrator:
         dockerfile_outputs = []
         image_outputs = []
         all_success = True
-        
+        failed_services = []
+        scanned_services = 0
+
         for service_name, config in services.items():
             if not isinstance(config, dict):
                 continue
@@ -383,7 +397,8 @@ class ComposeOrchestrator:
                 continue
                 
             logger.info(f"Scanning service {service_name} (Dockerfile: {dockerfile_path}, Image: {image_name})")
-            
+            scanned_services += 1
+
             try:
                 service_scanner = DockerSecurityScanner(
                     dockerfile_path=dockerfile_path,
@@ -407,6 +422,11 @@ class ComposeOrchestrator:
                     res = service_scanner.run_image_only_scan(severity)
                     if not res['image_scan']['success']:
                         all_success = False
+                        failed_services.append({
+                            'service': service_name,
+                            'reason': _failure_reason(res['image_scan'].get('output'),
+                                                      f"image scan failed for {image_name}")
+                        })
                     if res['image_scan']['output']:
                         image_outputs.append(f"--- Service: {service_name} ---\n{res['image_scan']['output']}")
                     if res.get('json_data'):
@@ -419,6 +439,15 @@ class ComposeOrchestrator:
                     res = service_scanner.run_full_scan(severity)
                     if not res['dockerfile_scan']['success'] or not res['image_scan']['success']:
                         all_success = False
+                    # Hadolint "failure" usually just means lint findings (already
+                    # rendered elsewhere); only a failed image scan means the
+                    # service's vulnerability data is missing.
+                    if not res['image_scan']['success']:
+                        failed_services.append({
+                            'service': service_name,
+                            'reason': _failure_reason(res['image_scan'].get('output'),
+                                                      f"image scan failed for {image_name}")
+                        })
                     if res['dockerfile_scan']['output'] and not res['dockerfile_scan'].get('skipped'):
                         dockerfile_outputs.append(f"--- Service: {service_name} ---\n{res['dockerfile_scan']['output']}")
                     if res['image_scan']['output'] and not res['image_scan'].get('skipped'):
@@ -430,7 +459,8 @@ class ComposeOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to scan service {service_name}: {e}")
                 all_success = False
-                
+                failed_services.append({'service': service_name, 'reason': str(e)})
+
         from datetime import datetime
         return {
             'dockerfile_scan': {
@@ -447,5 +477,7 @@ class ComposeOrchestrator:
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'image_name': "Multiple Services",
             'dockerfile_path': self.compose_path,
-            'scan_mode': 'compose'
+            'scan_mode': 'compose',
+            'failed_services': failed_services,
+            'scanned_services': scanned_services
         }

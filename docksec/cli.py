@@ -472,6 +472,18 @@ def _render_scan_summary(output, args, scanner, results, report_paths,
     output.section("Results")
     output.severity_table(counts)
     output.score(getattr(scanner, "analysis_score", None))
+
+    failed_services = results.get("failed_services") or []
+    if failed_services:
+        names = ", ".join(f["service"] for f in failed_services)
+        total = results.get("scanned_services") or len(failed_services)
+        output.warn(
+            f"{len(failed_services)} of {total} service(s) could not be scanned: {names}"
+        )
+        for f in failed_services:
+            output.detail(f"  {f['service']}: {f['reason']}")
+        output.detail("Vulnerability data for these services is missing; only static compose checks were applied.")
+
     output.quick_take(_quick_take_lines(results, counts, run_ai))
     if report_paths:
         output.report_results(report_paths, scanner.RESULTS_DIR)
@@ -486,6 +498,15 @@ def _quick_take_lines(results, counts, run_ai):
     if total_vulns:
         crit, high = counts.get("CRITICAL", 0), counts.get("HIGH", 0)
         lines.append(f"{total_vulns} security findings ({crit} critical, {high} high)")
+
+    failed_services = results.get("failed_services") or []
+    if failed_services:
+        names = ", ".join(f["service"] for f in failed_services)
+        total = results.get("scanned_services") or len(failed_services)
+        lines.append(
+            f"{len(failed_services)} of {total} service(s) could not be scanned: {names}"
+            " -- score does not reflect their image vulnerabilities"
+        )
 
     dockerfile_scan = results.get("dockerfile_scan", {})
     if not dockerfile_scan.get("skipped") and not dockerfile_scan.get("success"):
