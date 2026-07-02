@@ -147,6 +147,27 @@ With `--json` alone, no report files are written; combine it with `--format` to 
 files and print JSON in the same run. All human-readable messages (info, warnings,
 errors) move to stderr in `--json` mode, so stdout only ever contains the JSON payload.
 
+### Report formats
+
+`--format` accepts a comma-separated list of file outputs. The four built-in report
+types are:
+
+| Format | What you get |
+|--------|----------------|
+| `json` | A `.json` file with scan metadata, severity counts, and the full vulnerability list (same shape as the `--json` stdout payload, but written to disk). |
+| `csv` | A `.csv` table of findings (ID, severity, package, version, title, and related fields). |
+| `pdf` | A printable PDF summary with scan info, scores, and vulnerability details. |
+| `html` | A styled HTML report for browsing results in a browser. |
+
+**CSV with zero findings:** if a scan reports no vulnerabilities but `csv` is in your
+`--format` list, DockSec still writes a CSV file containing only the column headers.
+That is intentional (the export is valid, not a failed write) so downstream tools can
+rely on a stable schema even on clean scans.
+
+For stdout JSON and piping into other tools, see [Machine-readable output](#machine-readable-output)
+above. For CI and GitHub Code Scanning, use `--sarif` (see the next section); SARIF is
+separate from `--format` and is always emitted when requested.
+
 ### SARIF output for GitHub Code Scanning
 
 `--sarif` writes a SARIF 2.1.0 report alongside the other report formats. Upload it
