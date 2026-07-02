@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="docksec",
-    version="2026.7.1",
+    version="2026.7.2",
     description="AI-Powered Docker Security Analyzer",
     long_description=long_description,
     long_description_content_type="text/markdown",

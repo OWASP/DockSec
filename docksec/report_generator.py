@@ -854,13 +854,19 @@ class ReportGenerator:
                         else str(cvss_score)
                     )
 
+                vuln_id = vuln.get('VulnerabilityID') or 'N/A'
+                pkg_name = vuln.get('PkgName') or 'N/A'
+                installed_version = vuln.get('InstalledVersion') or 'N/A'
+                title = vuln.get('Title') or 'N/A'
+                display_title = (title[:80] + '...') if len(title) > 80 else title
+
                 table_html += f"""
                         <tr>
-                            <td><strong>{self._escape_html(vuln.get('VulnerabilityID', 'N/A'))}</strong></td>
+                            <td><strong>{self._escape_html(vuln_id)}</strong></td>
                             <td><span class="severity-badge {severity_class}">{vuln.get('Severity', 'N/A')}</span></td>
-                            <td>{self._escape_html(vuln.get('PkgName', 'N/A'))}</td>
-                            <td>{self._escape_html(vuln.get('InstalledVersion', 'N/A'))}</td>
-                            <td>{self._escape_html((vuln.get('Title', '')[:80] + '...') if len(vuln.get('Title', '')) > 80 else vuln.get('Title', 'N/A'))}</td>
+                            <td>{self._escape_html(pkg_name)}</td>
+                            <td>{self._escape_html(installed_version)}</td>
+                            <td>{self._escape_html(display_title)}</td>
                             <td>{cvss_score}</td>
                             <td><span class="status-badge {status_class}">{status}</span></td>
                         </tr>

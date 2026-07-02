@@ -141,8 +141,12 @@ class SecurityScoreCalculator:
             output = results.get('dockerfile_scan', {}).get('output', '')
             issue_count = len(output.split('\n')) if output else 0
             breakdown['dockerfile'] = max(0, 100 - (issue_count * 5))
-        
+
+        dockerfile_content = self._read_dockerfile(results.get('dockerfile_path', ''))
+        has_exposed_credentials = self._has_exposed_credentials(dockerfile_content)
+
         # Calculate vulnerability score
+        image_scan_skipped = results.get('image_scan', {}).get('skipped', False)
         vulnerabilities = results.get('json_data', [])
         if not vulnerabilities:
             breakdown['vulnerabilities'] = 100.0
@@ -158,21 +162,63 @@ class SecurityScoreCalculator:
                 for sev, weight in severity_weights.items()
             )
             breakdown['vulnerabilities'] = max(0, 100 - deduction)
-        
-        # Configuration score derived from actual Dockerfile analysis
-        breakdown['configuration'] = self._calculate_config_score(results)
 
-        # Overall score (weighted average)
-        breakdown['overall'] = (
-            breakdown['dockerfile'] * 0.3 +
-            breakdown['vulnerabilities'] * 0.5 +
-            breakdown['configuration'] * 0.2
-        )
+        # Configuration score derived from actual Dockerfile analysis
+        breakdown['configuration'] = self._calculate_config_score(results, dockerfile_content)
+
+        # Overall score (weighted average). When no image was scanned AND no
+        # other vulnerability data (e.g. compose static findings) exists, the
+        # vulnerabilities score is not an earned 100 - it's unmeasured, so its
+        # weight is redistributed to the axes that were actually evaluated.
+        # If findings are present (from an image scan or compose static
+        # rules), the vulnerabilities axis was measured and always counts.
+        if image_scan_skipped and not vulnerabilities:
+            breakdown['overall'] = (
+                breakdown['dockerfile'] * 0.5 +
+                breakdown['configuration'] * 0.5
+            )
+        else:
+            breakdown['overall'] = (
+                breakdown['dockerfile'] * 0.3 +
+                breakdown['vulnerabilities'] * 0.5 +
+                breakdown['configuration'] * 0.2
+            )
+
+        # Hardcoded, plaintext credentials in the image are an unambiguous,
+        # high-severity issue on their own regardless of how the rest of the
+        # blended score comes out - cap the overall score so it can't read
+        # as a middling result while secrets are shipped in the image.
+        if has_exposed_credentials:
+            breakdown['overall'] = min(breakdown['overall'], 20.0)
 
         logger.info(f"Score breakdown: {breakdown}")
         return breakdown
 
-    def _calculate_config_score(self, results: Dict) -> float:
+    @staticmethod
+    def _read_dockerfile(dockerfile_path: str) -> str:
+        """Read Dockerfile content for config scoring, or '' if unavailable."""
+        if not dockerfile_path:
+            return ''
+        try:
+            with open(dockerfile_path, 'r', encoding='utf-8', errors='ignore') as fh:
+                return fh.read()
+        except (OSError, IOError) as e:
+            logger.debug("Could not read Dockerfile for config scoring: %s", e)
+            return ''
+
+    @staticmethod
+    def _has_exposed_credentials(dockerfile_content: str) -> bool:
+        """Check whether the Dockerfile sets a credential-looking ENV var."""
+        if not dockerfile_content:
+            return False
+        credential_pattern = re.compile(
+            r'^\s*ENV\s+\S*(?:PASSWORD|SECRET|API_KEY|TOKEN|PASSWD|PRIVATE_KEY|AUTH_KEY|ACCESS_KEY)\S*'
+            r'\s*[=\s]\s*\S+',
+            re.MULTILINE | re.IGNORECASE,
+        )
+        return bool(credential_pattern.search(dockerfile_content))
+
+    def _calculate_config_score(self, results: Dict, dockerfile_content: str = None) -> float:
         """
         Calculate a configuration security score from Dockerfile content and
         Hadolint output.
@@ -194,17 +240,10 @@ class SecurityScoreCalculator:
             float: Configuration score between 0 and 100 (higher is better).
         """
         score = 100.0
-        dockerfile_path = results.get('dockerfile_path', '')
         hadolint_output = results.get('dockerfile_scan', {}).get('output', '')
 
-        # Read the Dockerfile content if a path is available
-        dockerfile_content = ''
-        if dockerfile_path:
-            try:
-                with open(dockerfile_path, 'r', encoding='utf-8', errors='ignore') as fh:
-                    dockerfile_content = fh.read()
-            except (OSError, IOError) as e:
-                logger.debug("Could not read Dockerfile for config scoring: %s", e)
+        if dockerfile_content is None:
+            dockerfile_content = self._read_dockerfile(results.get('dockerfile_path', ''))
 
         content_lower = dockerfile_content.lower()
 
@@ -227,15 +266,9 @@ class SecurityScoreCalculator:
         # ENV instructions that set variables with names matching common
         # credential patterns and assign a non-empty value are flagged.
         # ------------------------------------------------------------------
-        if dockerfile_content:
-            credential_pattern = re.compile(
-                r'^\s*ENV\s+\S*(?:PASSWORD|SECRET|API_KEY|TOKEN|PASSWD|PRIVATE_KEY|AUTH_KEY|ACCESS_KEY)\S*'
-                r'\s*[=\s]\s*\S+',
-                re.MULTILINE | re.IGNORECASE,
-            )
-            if credential_pattern.search(dockerfile_content):
-                logger.debug("Config score: exposed credentials in ENV detected (-30)")
-                score -= 30
+        if self._has_exposed_credentials(dockerfile_content):
+            logger.debug("Config score: exposed credentials in ENV detected (-30)")
+            score -= 30
 
         # ------------------------------------------------------------------
         # Check 3: Mutable base image tag (-15 points)
