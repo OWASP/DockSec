@@ -22,12 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--format` flag to choose which report formats are written (`json`, `csv`, `pdf`, `html`; default: all). Invalid values are rejected with a clear error.
 - `--output-dir` flag to write reports to a specific directory for the run (default: `~/.docksec/results` or `DOCKSEC_RESULTS_DIR`).
 - `--json` flag: print scan results as a single JSON object to stdout for scripts and CI pipelines. All human-readable output (banner, sections, info/warn/error, the result summary) moves to stderr in `--json` mode, so stdout carries only the JSON payload. `--json` alone does not write report files; combine with `--format` to also write files.
+- `--sarif` flag: write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools. Independent of `--format`; findings map to one SARIF rule per unique vulnerability ID and one result per finding, with severity mapped to SARIF levels (`CRITICAL`/`HIGH` -> `error`, `MEDIUM` -> `warning`, `LOW`/`UNKNOWN` -> `note`).
+- GitHub Action inputs for the new CLI flags: `output_dir`, `severity`, `fail_on`, `format`, `sarif`.
 
 ### Changed
 - **Cleaner terminal output**: internal logs now write to `stderr` instead of `stdout` and stay quiet in CLI mode, so raw location-tagged log lines no longer interleave with the tool's user-facing messages. Set `DOCKSEC_LOG_LEVEL` to restore verbose logging.
 - The security score is now rendered once, in the result summary, instead of mid-scan.
 - Report generation runs silently and the CLI renders a single report summary from the result (removes the misleading progress bars).
 - **Honest exit codes**: a failed scan (for example, an image that is not found) now exits non-zero instead of ending with "Analysis complete!".
+
+### Fixed (GitHub Action)
+- The Action's `output` input was passed to the CLI as `-o`/`--output`, a flag removed earlier in this release; setting it caused every run to fail with an argument-parsing error. It is now remapped to `--output-dir` (kept as a deprecated alias; the new `output_dir` input is preferred).
 
 ### Fixed
 - **PDF report encoding**: PDF generation no longer fails on non-latin-1 characters (bullets, smart quotes, em dashes, emoji) in vulnerability titles, scanner output, or AI findings; such characters are sanitized consistently across the whole document.

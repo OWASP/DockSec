@@ -17,8 +17,24 @@ inputs:
     description: 'Path to docker-compose file to scan'
     required: false
   output:
-    description: 'Custom output file path'
+    description: 'Deprecated alias for output_dir. The standalone -o/--output file flag no longer exists; this value is now used as the report output directory.'
     required: false
+  output_dir:
+    description: 'Directory to write reports to (default: ~/.docksec/results in the container)'
+    required: false
+  severity:
+    description: 'Comma-separated severity levels for the image scan (default: CRITICAL,HIGH)'
+    required: false
+  fail_on:
+    description: 'Exit non-zero if any finding is at or above this severity (CRITICAL, HIGH, MEDIUM, or LOW)'
+    required: false
+  format:
+    description: 'Comma-separated report formats to write: json, csv, pdf, html (default: all)'
+    required: false
+  sarif:
+    description: 'Write a SARIF 2.1.0 report for GitHub Code Scanning'
+    required: false
+    default: 'false'
   openai_api_key:
     description: 'OpenAI API Key for AI analysis'
     required: false
@@ -56,6 +72,11 @@ runs:
     INPUT_IMAGE: ${{ inputs.image }}
     INPUT_COMPOSE: ${{ inputs.compose }}
     INPUT_OUTPUT: ${{ inputs.output }}
+    INPUT_OUTPUT_DIR: ${{ inputs.output_dir }}
+    INPUT_SEVERITY: ${{ inputs.severity }}
+    INPUT_FAIL_ON: ${{ inputs.fail_on }}
+    INPUT_FORMAT: ${{ inputs.format }}
+    INPUT_SARIF: ${{ inputs.sarif }}
     INPUT_OPENAI_API_KEY: ${{ inputs.openai_api_key }}
     INPUT_ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
     INPUT_GOOGLE_API_KEY: ${{ inputs.google_api_key }}

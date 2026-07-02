@@ -57,6 +57,7 @@ def main() -> None:
     parser.add_argument('--format', dest='format', help='Comma-separated report formats to write: json, csv, pdf, html (default: all)')
     parser.add_argument('--output-dir', dest='output_dir', metavar='DIR', help='Directory to write reports to (default: ~/.docksec/results or DOCKSEC_RESULTS_DIR)')
     parser.add_argument('--json', dest='json_stdout', action='store_true', help='Print scan results as JSON to stdout (no report files unless --format is also given)')
+    parser.add_argument('--sarif', dest='sarif', action='store_true', help='Write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -337,6 +338,11 @@ def main() -> None:
             # Generate reports (all formats by default, or the requested subset)
             report_paths = scanner.generate_all_reports(results, formats=report_formats)
 
+            # SARIF is opt-in via --sarif (not part of --format's default bundle)
+            # since it targets GitHub Code Scanning / CI rather than local reading.
+            if args.sarif:
+                report_paths["sarif"] = _generate_sarif_report(scanner, results)
+
             # Run advanced scan if available and image is provided (skip for compose
             # and for --json, since Docker Scout output is not part of the payload
             # and would otherwise print to stdout alongside it)
@@ -384,6 +390,21 @@ def main() -> None:
 
     if gate_triggered:
         sys.exit(1)
+
+
+def _generate_sarif_report(scanner, results):
+    """Write a SARIF 2.1.0 report for the scan and return its path.
+
+    Uses ReportGenerator directly (rather than DockerSecurityScanner's
+    generate_all_reports) because SARIF needs the DockSec version embedded in
+    the report and is opt-in via --sarif rather than part of --format's
+    default bundle.
+    """
+    from docksec.report_generator import ReportGenerator
+
+    generator = ReportGenerator(scanner.image_name or "docksec_report", scanner.RESULTS_DIR)
+    generator.set_analysis_score(getattr(scanner, "analysis_score", None))
+    return generator.generate_sarif_report(results, tool_version=get_version())
 
 
 def _print_json_results(results, scanner, report_paths):

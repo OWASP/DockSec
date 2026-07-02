@@ -516,5 +516,61 @@ class TestJsonOutput(unittest.TestCase):
         self.assertEqual(len(printed), 1)
 
 
+class TestSarifOutput(unittest.TestCase):
+    """Test cases for --sarif wiring in the CLI."""
+
+    def _run_image_only(self, extra_argv=None):
+        """Run main() image-only with a mocked scanner and ReportGenerator."""
+        from docksec.cli import main
+
+        argv = ['docksec', '--image-only', '-i', 'test:latest'] + (extra_argv or [])
+        with patch('sys.argv', argv), \
+             patch('docksec.docker_scanner.DockerSecurityScanner') as scanner_cls, \
+             patch('docksec.report_generator.ReportGenerator') as report_cls:
+            scanner = Mock()
+            scanner_cls.return_value = scanner
+            scanner.image_name = "test:latest"
+            scanner.analysis_score = 90.0
+            scanner.RESULTS_DIR = '/tmp'
+            scanner.run_image_only_scan.return_value = {
+                'json_data': [],
+                'dockerfile_scan': {'skipped': True},
+                'image_scan': {'skipped': False},
+                'scan_mode': 'image_only',
+            }
+            scanner.get_security_score.return_value = 90.0
+            scanner.generate_all_reports.return_value = {'json': '/tmp/x.json'}
+
+            report_gen = Mock()
+            report_cls.return_value = report_gen
+            report_gen.generate_sarif_report.return_value = '/tmp/x.sarif'
+
+            code = 0
+            with patch('builtins.print'):
+                try:
+                    main()
+                except SystemExit as e:
+                    code = e.code
+            return code, report_gen, scanner_cls
+
+    def test_sarif_not_generated_without_flag(self):
+        _, report_gen, _ = self._run_image_only()
+        report_gen.generate_sarif_report.assert_not_called()
+
+    def test_sarif_flag_generates_report(self):
+        code, report_gen, _ = self._run_image_only(extra_argv=['--sarif'])
+        self.assertEqual(code, 0)
+        report_gen.generate_sarif_report.assert_called_once()
+        _, kwargs = report_gen.generate_sarif_report.call_args
+        self.assertIn('tool_version', kwargs)
+
+    def test_sarif_flag_does_not_affect_default_format_bundle(self):
+        """--sarif is additive; it must not change the --format-selected set."""
+        _, _, scanner_cls = self._run_image_only(extra_argv=['--sarif', '--format', 'json'])
+        scanner = scanner_cls.return_value
+        _, kwargs = scanner.generate_all_reports.call_args
+        self.assertEqual(kwargs.get('formats'), ['json'])
+
+
 if __name__ == '__main__':
     unittest.main()

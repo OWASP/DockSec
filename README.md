@@ -115,6 +115,9 @@ docksec Dockerfile --scan-only --format json,html --output-dir ./reports
 # Print results as JSON to stdout for scripts and CI pipelines
 docksec -i myapp:latest --image-only --json
 
+# Write a SARIF report for GitHub Code Scanning
+docksec Dockerfile --scan-only --sarif
+
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 
@@ -139,6 +142,34 @@ docksec -i myapp:latest --image-only --json | jq '.severity_counts'
 With `--json` alone, no report files are written; combine it with `--format` to write
 files and print JSON in the same run. All human-readable messages (info, warnings,
 errors) move to stderr in `--json` mode, so stdout only ever contains the JSON payload.
+
+### SARIF output for GitHub Code Scanning
+
+`--sarif` writes a SARIF 2.1.0 report alongside the other report formats. Upload it
+with the standard `github/codeql-action/upload-sarif` action to see findings annotated
+directly on pull requests and in the Security tab:
+
+```yaml
+- name: Run DockSec
+  uses: OWASP/DockSec@main
+  with:
+    dockerfile: 'Dockerfile'
+    sarif: 'true'
+
+- name: Upload SARIF to GitHub Code Scanning
+  uses: github/codeql-action/upload-sarif@v3
+  if: always()
+  with:
+    sarif_file: ~/.docksec/results
+```
+
+> `if: always()` is important: without it, the upload step is skipped whenever
+> `--fail-on` causes DockSec to exit non-zero, losing the findings exactly when they
+> matter most.
+
+`--sarif` is independent of `--format`: it always writes a `.sarif` file regardless of
+which report formats you've selected, since it targets CI/Code Scanning rather than
+local reading.
 
 ### Exit codes
 
