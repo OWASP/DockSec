@@ -130,6 +130,144 @@ class ReportGenerator:
             output.error(f"Failed to save JSON report: {e}")
             return ""
 
+    def generate_sarif_report(self, results: Dict, tool_version: str = "unknown") -> str:
+        """
+        Generate a SARIF 2.1.0 report so findings can be uploaded to GitHub Code
+        Scanning (or any other SARIF-compatible consumer).
+
+        Each unique VulnerabilityID/rule-id becomes one SARIF rule, and each
+        finding becomes one SARIF result pointing at the scanned Dockerfile or
+        compose file. Findings with no source file to point at (e.g. an
+        image-only scan) still get a result, using the image name as a
+        synthetic artifact so they are not silently dropped.
+
+        Args:
+            results: Scan results dictionary
+            tool_version: DockSec version string to embed in the SARIF driver
+
+        Returns:
+            Path to the generated SARIF file, or empty string on failure
+        """
+        output_file = self._get_safe_filename("sarif")
+        logger.info(f"Generating SARIF report: {output_file}")
+
+        vulnerabilities = results.get("json_data", [])
+        artifact_uri = self._sarif_artifact_uri(results)
+
+        rules: Dict[str, Dict] = {}
+        sarif_results = []
+        for vuln in vulnerabilities:
+            rule_id = str(vuln.get("VulnerabilityID") or "UNKNOWN")
+            if rule_id not in rules:
+                rules[rule_id] = self._sarif_rule(rule_id, vuln)
+            sarif_results.append(self._sarif_result(rule_id, vuln, artifact_uri))
+
+        sarif_doc = {
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "DockSec",
+                            "informationUri": "https://owasp.org/DockSec/",
+                            "version": tool_version,
+                            "rules": list(rules.values()),
+                        }
+                    },
+                    "results": sarif_results,
+                }
+            ],
+        }
+
+        try:
+            with open(output_file, "w") as f:
+                json.dump(sarif_doc, f, indent=2)
+            logger.info(f"SARIF report saved successfully with {len(sarif_results)} results")
+            return output_file
+        except Exception as e:
+            logger.error(f"Error saving SARIF report: {e}", exc_info=True)
+            output.error(f"Failed to save SARIF report: {e}")
+            return ""
+
+    def _sarif_artifact_uri(self, results: Dict) -> str:
+        """Resolve the file SARIF results should point at.
+
+        Falls back to the image name when there is no Dockerfile/compose file
+        on disk (image-only scans), so results still have a valid location.
+        """
+        dockerfile_path = results.get("dockerfile_path")
+        if dockerfile_path and not str(dockerfile_path).startswith("N/A"):
+            return os.path.basename(str(dockerfile_path))
+        return self.image_name or "docksec-scan"
+
+    @staticmethod
+    def _sarif_level(severity) -> str:
+        """Map DockSec severities to SARIF result levels."""
+        mapping = {
+            "CRITICAL": "error",
+            "HIGH": "error",
+            "MEDIUM": "warning",
+            "LOW": "note",
+            "UNKNOWN": "note",
+        }
+        return mapping.get(str(severity or "UNKNOWN").upper(), "note")
+
+    @staticmethod
+    def _sarif_rule(rule_id: str, vuln: Dict) -> Dict:
+        """Build the SARIF rule (reportingDescriptor) for one finding type."""
+        rule = {
+            "id": rule_id,
+            "name": rule_id,
+            "shortDescription": {"text": vuln.get("Title") or rule_id},
+            "fullDescription": {"text": vuln.get("Description") or vuln.get("Title") or rule_id},
+            "defaultConfiguration": {"level": ReportGenerator._sarif_level(vuln.get("Severity"))},
+            "properties": {"security-severity": str(vuln.get("CVSS") or "")},
+        }
+        primary_url = vuln.get("PrimaryURL")
+        if primary_url:
+            rule["helpUri"] = primary_url
+        return rule
+
+    @staticmethod
+    def _sarif_result(rule_id: str, vuln: Dict, artifact_uri: str) -> Dict:
+        """Build one SARIF result for a finding."""
+        pkg = vuln.get("PkgName")
+        version = vuln.get("InstalledVersion")
+        message = vuln.get("Title") or rule_id
+        if pkg:
+            message = f"{message} ({pkg}{'@' + version if version else ''})"
+
+        region = ReportGenerator._sarif_region(vuln.get("Target"))
+        location = {
+            "physicalLocation": {
+                "artifactLocation": {"uri": artifact_uri},
+            }
+        }
+        if region:
+            location["physicalLocation"]["region"] = region
+
+        return {
+            "ruleId": rule_id,
+            "level": ReportGenerator._sarif_level(vuln.get("Severity")),
+            "message": {"text": message},
+            "locations": [location],
+        }
+
+    @staticmethod
+    def _sarif_region(target) -> Optional[Dict]:
+        """Extract a line-number region from a compose Target ('file:service:line').
+
+        Trivy image-vulnerability targets carry a package path, not a line
+        number, so this only produces a region for compose findings.
+        """
+        if not target:
+            return None
+        parts = str(target).rsplit(":", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            return {"startLine": max(1, int(parts[1]))}
+        return None
+
     def generate_csv_report(self, results: Dict) -> str:
         """
         Generate CSV format report for vulnerability data.

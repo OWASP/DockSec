@@ -288,3 +288,144 @@ def test_generate_all_reports_empty_formats_writes_nothing(tmp_path, sample_scan
     results = make_results([], sample_scan_info)
     paths = rg.generate_all_reports(results, formats=[])
     assert paths == {}
+
+
+# ---------- SARIF REPORT TESTS ----------
+
+
+def test_sarif_report_file_is_created(tmp_path, sample_vulnerabilities, sample_scan_info):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results(sample_vulnerabilities, sample_scan_info)
+    output_path = rg.generate_sarif_report(results, tool_version="1.2.3")
+    assert os.path.exists(output_path)
+    assert output_path.endswith(".sarif")
+
+
+def test_sarif_report_has_valid_2_1_0_structure(
+    tmp_path, sample_vulnerabilities, sample_scan_info
+):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results(sample_vulnerabilities, sample_scan_info)
+    output_path = rg.generate_sarif_report(results, tool_version="1.2.3")
+    with open(output_path) as f:
+        doc = json.load(f)
+
+    assert doc["version"] == "2.1.0"
+    assert "$schema" in doc
+    assert len(doc["runs"]) == 1
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "DockSec"
+    assert run["tool"]["driver"]["version"] == "1.2.3"
+
+
+def test_sarif_report_maps_one_result_per_vulnerability(
+    tmp_path, sample_vulnerabilities, sample_scan_info
+):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results(sample_vulnerabilities, sample_scan_info)
+    output_path = rg.generate_sarif_report(results, tool_version="1.2.3")
+    with open(output_path) as f:
+        doc = json.load(f)
+
+    run = doc["runs"][0]
+    assert len(run["results"]) == len(sample_vulnerabilities)
+    result = run["results"][0]
+    assert result["ruleId"] == sample_vulnerabilities[0]["VulnerabilityID"]
+    assert result["level"] == "error"  # CRITICAL -> error
+    assert sample_vulnerabilities[0]["PkgName"] in result["message"]["text"]
+    assert (
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        == "Dockerfile"
+    )
+
+
+def test_sarif_report_dedupes_rules_by_vulnerability_id(tmp_path, sample_scan_info):
+    vulns = [
+        {
+            "VulnerabilityID": "CVE-2023-0001",
+            "Severity": "HIGH",
+            "PkgName": "openssl",
+            "InstalledVersion": "1.0.0",
+            "Title": "Issue A",
+            "Target": "img (pkg)",
+        },
+        {
+            "VulnerabilityID": "CVE-2023-0001",
+            "Severity": "HIGH",
+            "PkgName": "openssl",
+            "InstalledVersion": "1.0.1",
+            "Title": "Issue A",
+            "Target": "img (pkg)",
+        },
+    ]
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results(vulns, sample_scan_info)
+    output_path = rg.generate_sarif_report(results, tool_version="1.2.3")
+    with open(output_path) as f:
+        doc = json.load(f)
+
+    run = doc["runs"][0]
+    # Same VulnerabilityID -> one rule, but each finding still gets its own result.
+    assert len(run["tool"]["driver"]["rules"]) == 1
+    assert len(run["results"]) == 2
+
+
+def test_sarif_report_empty_vulnerabilities_no_crash(tmp_path, sample_scan_info):
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    results = make_results([], sample_scan_info)
+    output_path = rg.generate_sarif_report(results, tool_version="1.2.3")
+    with open(output_path) as f:
+        doc = json.load(f)
+    assert doc["runs"][0]["results"] == []
+    assert doc["runs"][0]["tool"]["driver"]["rules"] == []
+
+
+def test_sarif_severity_level_mapping():
+    assert ReportGenerator._sarif_level("CRITICAL") == "error"
+    assert ReportGenerator._sarif_level("HIGH") == "error"
+    assert ReportGenerator._sarif_level("MEDIUM") == "warning"
+    assert ReportGenerator._sarif_level("LOW") == "note"
+    assert ReportGenerator._sarif_level("UNKNOWN") == "note"
+    assert ReportGenerator._sarif_level(None) == "note"
+    assert ReportGenerator._sarif_level("not-a-real-severity") == "note"
+
+
+def test_sarif_region_parses_compose_target_line_number():
+    region = ReportGenerator._sarif_region("docker-compose.yml:web:12")
+    assert region == {"startLine": 12}
+
+
+def test_sarif_region_none_for_non_numeric_target():
+    # Trivy image-vulnerability targets carry a package path, not a line number.
+    assert ReportGenerator._sarif_region("python:3.9-slim (debian 11)") is None
+    assert ReportGenerator._sarif_region(None) is None
+    assert ReportGenerator._sarif_region("") is None
+
+
+def test_sarif_artifact_uri_uses_dockerfile_basename(tmp_path, sample_scan_info):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    results = {"dockerfile_path": "/some/deep/path/Dockerfile"}
+    assert rg._sarif_artifact_uri(results) == "Dockerfile"
+
+
+def test_sarif_artifact_uri_falls_back_to_image_name_for_image_only_scans(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    results = {"dockerfile_path": "N/A - Image-only scan"}
+    assert rg._sarif_artifact_uri(results) == "myapp:latest"
+
+
+def test_sarif_rule_includes_help_uri_when_primary_url_present():
+    vuln = {
+        "VulnerabilityID": "CVE-2023-0001",
+        "Severity": "HIGH",
+        "Title": "Issue",
+        "PrimaryURL": "https://nvd.nist.gov/vuln/CVE-2023-0001",
+    }
+    rule = ReportGenerator._sarif_rule("CVE-2023-0001", vuln)
+    assert rule["helpUri"] == "https://nvd.nist.gov/vuln/CVE-2023-0001"
+
+
+def test_sarif_rule_omits_help_uri_when_no_primary_url():
+    vuln = {"VulnerabilityID": "compose-x", "Severity": "LOW", "Title": "Issue"}
+    rule = ReportGenerator._sarif_rule("compose-x", vuln)
+    assert "helpUri" not in rule

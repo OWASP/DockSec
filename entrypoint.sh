@@ -26,8 +26,29 @@ if [ -n "${INPUT_COMPOSE}" ]; then
   ARGS+=("-c" "${INPUT_COMPOSE}")
 fi
 
-if [ -n "${INPUT_OUTPUT}" ]; then
-  ARGS+=("-o" "${INPUT_OUTPUT}")
+# `output` is a deprecated alias for `output_dir` - the standalone -o/--output
+# file flag was removed from the CLI, so both inputs now map to --output-dir.
+# output_dir takes precedence if both are set.
+if [ -n "${INPUT_OUTPUT_DIR}" ]; then
+  ARGS+=("--output-dir" "${INPUT_OUTPUT_DIR}")
+elif [ -n "${INPUT_OUTPUT}" ]; then
+  ARGS+=("--output-dir" "${INPUT_OUTPUT}")
+fi
+
+if [ -n "${INPUT_SEVERITY}" ]; then
+  ARGS+=("--severity" "${INPUT_SEVERITY}")
+fi
+
+if [ -n "${INPUT_FAIL_ON}" ]; then
+  ARGS+=("--fail-on" "${INPUT_FAIL_ON}")
+fi
+
+if [ -n "${INPUT_FORMAT}" ]; then
+  ARGS+=("--format" "${INPUT_FORMAT}")
+fi
+
+if [ "${INPUT_SARIF}" = "true" ]; then
+  ARGS+=("--sarif")
 fi
 
 if [ "${INPUT_AI_ONLY}" = "true" ]; then
