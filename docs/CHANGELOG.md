@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.7.3] - 2026-07-02
+
+### Fixed
+
+- **AI analysis without an image wrote no report, but claimed it did**: running an AI analysis with a Dockerfile but no image (e.g. `docksec Dockerfile --provider anthropic`, or `--ai-only`) set the tool into a mode where the AI pass ran but the scan pass — the only place reports were generated — did not. No report file was written, yet the tool still printed "For detailed AI analysis, check the generated reports at: ...", pointing at a directory that contained only stale files from previous runs. Since the on-screen findings are truncated to the top few per section, the full AI findings were effectively unreachable. AI-only runs now write the complete findings to a report (JSON/CSV/PDF/HTML, plus SARIF with `--sarif`), honoring `--format` and `--output-dir`, and the "reports written" message is only shown when a report was actually generated.
+
 ## [2026.7.2] - 2026-07-02
 
 ### Fixed
