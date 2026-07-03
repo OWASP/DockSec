@@ -3,395 +3,352 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docker Security Report</title>
+    <title>DockSec Security Report</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #f4f6fb;
+            --surface: #ffffff;
+            --surface-alt: #f8fafc;
+            --border: #e5e9f0;
+            --text: #1f2733;
+            --text-muted: #5b6675;
+            --brand: #2563eb;
+            --brand-strong: #1e40af;
+            --critical: #dc2626;
+            --high: #ea580c;
+            --medium: #d97706;
+            --low: #2563eb;
+            --ok: #059669;
+            --shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.06);
+            --radius: 12px;
         }
-        
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f141b;
+                --surface: #161c26;
+                --surface-alt: #1c2431;
+                --border: #2a3444;
+                --text: #e6edf6;
+                --text-muted: #97a3b6;
+                --brand: #60a5fa;
+                --brand-strong: #93c5fd;
+                --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+            }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+            color: var(--text);
+            background: var(--bg);
+            padding: 32px 20px;
+            -webkit-font-smoothing: antialiased;
         }
-        
+
         .container {
-            max-width: 1200px;
+            max-width: 1120px;
             margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
             overflow: hidden;
         }
-        
+
         .header {
-            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
-            color: white;
-            padding: 40px;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 36px 40px 28px;
         }
-        
-        .header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="rgba(255,255,255,0.1)"/><circle cx="75" cy="75" r="1" fill="rgba(255,255,255,0.1)"/><circle cx="50" cy="10" r="0.5" fill="rgba(255,255,255,0.1)"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-            opacity: 0.3;
+
+        .header .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8em;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--brand);
+            margin-bottom: 14px;
         }
-        
+
+        .header .brand::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            background: var(--brand);
+        }
+
         .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            position: relative;
-            z-index: 1;
+            font-size: 1.9em;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            margin-bottom: 6px;
         }
-        
+
         .header p {
-            font-size: 1.2em;
-            opacity: 0.9;
-            position: relative;
-            z-index: 1;
+            font-size: 1.05em;
+            color: var(--text-muted);
         }
-        
-        .content {
-            padding: 40px;
-        }
-        
+
+        .content { padding: 32px 40px; }
+
         .section {
-            margin-bottom: 40px;
-            background: #f8f9ff;
-            border-radius: 12px;
-            padding: 30px;
-            border-left: 5px solid #3498db;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-bottom: 28px;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 26px 28px;
         }
-        
-        .section:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        }
-        
+
         .section h2 {
-            color: #2c3e50;
+            color: var(--text);
             margin-bottom: 20px;
-            font-size: 1.8em;
-            position: relative;
-            padding-bottom: 10px;
+            font-size: 1.25em;
+            font-weight: 650;
+            letter-spacing: -0.01em;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
         }
-        
-        .section h2::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 50px;
-            height: 3px;
-            background: linear-gradient(90deg, #3498db, #667eea);
-            border-radius: 2px;
-        }
-        
+
         .info-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 14px;
         }
-        
+
         .info-item {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            border: 1px solid #e1e8ed;
+            background: var(--surface);
+            padding: 16px 18px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
         }
-        
+
         .info-label {
             font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 8px;
-            font-size: 0.9em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-size: 0.72em;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.06em;
         }
-        
+
         .info-value {
-            color: #555;
-            font-size: 1.1em;
+            color: var(--text);
+            font-size: 1.02em;
             word-break: break-all;
         }
-        
+
         .severity-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 14px;
+            margin: 4px 0 20px;
         }
-        
+
         .severity-item {
-            background: white;
-            padding: 20px;
+            background: var(--surface);
+            padding: 20px 16px;
             border-radius: 10px;
             text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-            transition: transform 0.3s ease;
+            border: 1px solid var(--border);
+            border-top: 3px solid var(--border);
         }
-        
-        .severity-item:hover {
-            transform: translateY(-3px);
-        }
-        
-        .severity-critical {
-            border-left: 5px solid #e74c3c;
-        }
-        
-        .severity-high {
-            border-left: 5px solid #f39c12;
-        }
-        
-        .severity-medium {
-            border-left: 5px solid #f1c40f;
-        }
-        
-        .severity-low {
-            border-left: 5px solid #27ae60;
-        }
-        
+
+        .severity-critical { border-top-color: var(--critical); }
+        .severity-high { border-top-color: var(--high); }
+        .severity-medium { border-top-color: var(--medium); }
+        .severity-low { border-top-color: var(--low); }
+
         .severity-count {
-            font-size: 2em;
-            font-weight: bold;
-            margin-bottom: 5px;
+            font-size: 2.1em;
+            font-weight: 700;
+            margin-bottom: 4px;
+            line-height: 1.1;
         }
-        
+
+        .severity-critical .severity-count { color: var(--critical); }
+        .severity-high .severity-count { color: var(--high); }
+        .severity-medium .severity-count { color: var(--medium); }
+        .severity-low .severity-count { color: var(--low); }
+
         .severity-label {
-            font-size: 0.9em;
+            font-size: 0.78em;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            opacity: 0.8;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            font-weight: 600;
         }
-        
+
+        .table-scroll { overflow-x: auto; }
+
         .vulnerability-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
-            background: white;
-            border-radius: 8px;
+            margin-top: 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
             overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
-        
+
         .vulnerability-table th {
-            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
-            color: white;
-            padding: 15px 12px;
+            background: var(--surface-alt);
+            color: var(--text-muted);
+            padding: 12px 14px;
             text-align: left;
-            font-weight: 600;
+            font-weight: 650;
             text-transform: uppercase;
-            font-size: 0.85em;
-            letter-spacing: 0.5px;
+            font-size: 0.72em;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
         }
-        
+
         .vulnerability-table td {
-            padding: 12px;
-            border-bottom: 1px solid #e1e8ed;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
             vertical-align: top;
+            font-size: 0.92em;
         }
-        
-        .vulnerability-table tr:nth-child(even) {
-            background-color: #f8f9ff;
-        }
-        
-        .vulnerability-table tr:hover {
-            background-color: #e3f2fd;
-            transition: background-color 0.3s ease;
-        }
-        
+
+        .vulnerability-table tr:last-child td { border-bottom: none; }
+        .vulnerability-table tbody tr:hover { background: var(--surface-alt); }
+
         .severity-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.8em;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .badge-critical {
-            background: #fee;
-            color: #e74c3c;
-            border: 1px solid #e74c3c;
-        }
-        
-        .badge-high {
-            background: #fef5e7;
-            color: #f39c12;
-            border: 1px solid #f39c12;
-        }
-        
-        .badge-medium {
-            background: #fffbf0;
-            color: #f1c40f;
-            border: 1px solid #f1c40f;
-        }
-        
-        .badge-low {
-            background: #f0f9ff;
-            color: #27ae60;
-            border: 1px solid #27ae60;
-        }
-        
-        .status-badge {
-            padding: 4px 8px;
-            border-radius: 4px;
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 6px;
             font-size: 0.75em;
-            font-weight: 500;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
         }
-        
-        .status-fixed {
-            background: #d4edda;
-            color: #155724;
+
+        .badge-critical { background: rgba(220, 38, 38, 0.12); color: var(--critical); }
+        .badge-high { background: rgba(234, 88, 12, 0.12); color: var(--high); }
+        .badge-medium { background: rgba(217, 119, 6, 0.14); color: var(--medium); }
+        .badge-low { background: rgba(37, 99, 235, 0.12); color: var(--low); }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-weight: 600;
         }
-        
-        .status-affected {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        
+
+        .status-fixed { background: rgba(5, 150, 105, 0.14); color: var(--ok); }
+        .status-affected { background: rgba(220, 38, 38, 0.12); color: var(--critical); }
+
         .no-issues {
             text-align: center;
-            padding: 40px;
-            color: #27ae60;
-            font-size: 1.2em;
-            font-weight: 500;
+            padding: 32px 20px;
+            color: var(--ok);
+            font-size: 1.05em;
+            font-weight: 600;
+            background: rgba(5, 150, 105, 0.08);
+            border: 1px solid rgba(5, 150, 105, 0.25);
+            border-radius: 10px;
         }
-        
+
         .no-issues::before {
-            content: '✓';
+            content: "No issues";
             display: block;
-            font-size: 3em;
-            margin-bottom: 10px;
-            color: #27ae60;
-        }
-        
-        .footer {
-            text-align: center;
-            padding: 30px;
-            background: #f8f9fa;
-            color: #666;
-            font-size: 0.9em;
-        }
-        
-        .score-container {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 12px;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        
-        .score-value {
-            font-size: 4em;
-            font-weight: bold;
-            margin: 10px 0;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        
-        .score-label {
-            font-size: 1.2em;
-            opacity: 0.9;
+            font-size: 0.72em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            opacity: 0.75;
+            margin-bottom: 6px;
         }
-        
-        .config-issues {
-            margin-top: 20px;
+
+        .score-container {
+            background: var(--surface);
+            color: var(--text);
+            padding: 28px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            text-align: center;
         }
-        
-        .config-category {
-            margin-bottom: 20px;
+
+        .score-value {
+            font-size: 3.4em;
+            font-weight: 800;
+            margin: 6px 0;
+            color: var(--brand);
+            letter-spacing: -0.02em;
         }
-        
+
+        .score-label {
+            font-size: 0.82em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+        }
+
+        .config-issues { margin-top: 8px; }
+        .config-category { margin-bottom: 18px; }
+        .config-category:last-child { margin-bottom: 0; }
+
         .config-category h4 {
-            color: #2c3e50;
+            color: var(--text);
             margin-bottom: 10px;
-            font-size: 1.1em;
+            font-size: 1em;
+            font-weight: 650;
         }
-        
-        .config-list {
-            list-style: none;
-            padding: 0;
-        }
-        
+
+        .config-list { list-style: none; padding: 0; }
+
         .config-list li {
-            background: white;
+            background: var(--surface);
             margin-bottom: 8px;
             padding: 12px 15px;
-            border-radius: 6px;
-            border-left: 4px solid #e74c3c;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--critical);
+            font-size: 0.94em;
         }
-        
-        .config-list.medium li {
-            border-left-color: #f39c12;
+
+        .config-list.medium li { border-left-color: var(--medium); }
+        .config-list.low li { border-left-color: var(--low); }
+
+        .footer {
+            text-align: center;
+            padding: 24px 40px;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.85em;
         }
-        
-        .config-list.low li {
-            border-left-color: #f1c40f;
-        }
-        
+
+        .footer a { color: var(--brand); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+
         @media (max-width: 768px) {
-            .container {
-                margin: 10px;
-                border-radius: 8px;
-            }
-            
-            .header {
-                padding: 20px;
-            }
-            
-            .header h1 {
-                font-size: 2em;
-            }
-            
-            .content {
-                padding: 20px;
-            }
-            
-            .section {
-                padding: 20px;
-            }
-            
-            .info-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .vulnerability-table {
-                font-size: 0.85em;
-            }
-            
-            .vulnerability-table th,
-            .vulnerability-table td {
-                padding: 8px 6px;
-            }
+            body { padding: 16px 10px; }
+            .header { padding: 24px 20px 20px; }
+            .header h1 { font-size: 1.5em; }
+            .content { padding: 20px; }
+            .section { padding: 18px 16px; }
+            .info-grid { grid-template-columns: 1fr; }
+            .footer { padding: 20px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
+            <div class="brand">DockSec Security Report</div>
             <h1>Docker Security Report</h1>
             <p>{{SCAN_MODE_TITLE}}</p>
         </div>
-        
+
         <div class="content">
             <!-- Scan Information Section -->
             <div class="section">
@@ -441,9 +398,9 @@
             <!-- Detailed Vulnerabilities Section -->
             {{DETAILED_VULNERABILITIES_SECTION}}
         </div>
-        
+
         <div class="footer">
-            <p>Generated by docksec on {{SCAN_DATE}}</p>
+            <p>Generated by <a href="https://owasp.org/DockSec/">DockSec</a> on {{SCAN_DATE}}</p>
         </div>
     </div>
 </body>
