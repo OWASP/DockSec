@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CycloneDX SBOM export (`--sbom`)**: writes a spec-compliant CycloneDX software bill of materials (`<image>.cdx.json`) of the scanned image, covering the full package inventory plus known vulnerabilities. The BOM is produced by Trivy's native exporter and DockSec is stamped into the tool metadata. Opt-in and independent of `--format`; requires a single image (`-i`), so it is skipped for compose runs. The path is surfaced in the report summary and in `--json` output under `report_files`.
+- **Offline mode (`--offline`)**: runs a scan with no network access, using the already-downloaded Trivy vulnerability database (`--offline-scan --skip-db-update`) and skipping the AI analysis and the Docker Scout advanced scan (both require network). Makes air-gapped scanning a single flag.
+- **`install-skill` subcommand**: `docksec install-skill` writes DockSec usage instructions into the well-known context files for AI coding assistants (Claude Code `.claude/commands/docksec.md`, Cursor `.cursor/rules/docksec.mdc`, Codex `AGENTS.md`, Gemini `GEMINI.md`, GitHub Copilot `.github/copilot-instructions.md`). Re-running updates the DockSec section in place rather than duplicating it. Added via backward-compatible subcommand dispatch: all existing flag-based usage is unchanged.
+- **Fixable-count and suggested-fix output**: the terminal result summary now reports how many findings have a fixed version available upstream (e.g. "28 of 40 have a fixed version available upstream") and prints a "Suggested fixes" block of concrete, severity-ranked, deduplicated upgrade hints (`upgrade PKG installed -> fixed`). Trivy's `FixedVersion` is now threaded into every finding, so it is also present in the JSON/CSV/SARIF outputs.
+
+### Changed
+
+- HTML report redesigned with a clean, professional, dark-mode-aware theme (replacing the previous purple-gradient style); all report data classes preserved.
+
+### Fixed
+
+- **`get_llm()` crashed with `NameError` on any LLM init failure**: the exception handler referenced a module-level `console` defined later in the file, so a bad API key / no credits / network error raised `NameError: name 'console' is not defined` instead of showing the troubleshooting steps. Now routed through the shared output layer.
+
 ## [2026.7.3] - 2026-07-02
 
 ### Fixed

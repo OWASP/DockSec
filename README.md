@@ -118,6 +118,15 @@ docksec -i myapp:latest --image-only --json
 # Write a SARIF report for GitHub Code Scanning
 docksec Dockerfile --scan-only --sarif
 
+# Write a CycloneDX SBOM of an image for supply-chain tooling
+docksec --image-only -i myapp:latest --sbom
+
+# Fully offline scan: local Trivy DB, no network, no AI
+docksec --image-only -i myapp:latest --offline
+
+# Install AI-assistant skill files (Claude Code, Cursor, Copilot, and more)
+docksec install-skill
+
 # Save today's findings as a baseline, then only gate on new findings later
 docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --update-baseline
 docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --fail-on high
@@ -175,6 +184,55 @@ directly on pull requests and in the Security tab:
 which report formats you've selected, since it targets CI/Code Scanning rather than
 local reading.
 
+### CycloneDX SBOM
+
+`--sbom` writes a CycloneDX software bill of materials (`<image>.cdx.json`) of the
+scanned image, listing every package component plus known vulnerabilities. The BOM is
+produced by Trivy's native exporter (so it is spec-compliant) and DockSec stamps itself
+into the tool metadata. Feed it into Dependency-Track, GitHub's dependency graph, or any
+other SBOM consumer:
+
+```bash
+docksec --image-only -i myapp:latest --sbom
+```
+
+`--sbom` needs a single image (`-i`), so it is skipped for compose runs. Like `--sarif`,
+it is independent of `--format`.
+
+### Offline mode
+
+`--offline` runs a scan with no network access. It uses the Trivy vulnerability database
+already on disk (no DB update) and skips the AI analysis and the Docker Scout advanced
+scan, both of which require network. This is the simplest way to scan in an air-gapped or
+locked-down environment:
+
+```bash
+docksec --image-only -i myapp:latest --offline
+```
+
+Make sure the Trivy DB has been downloaded at least once (any prior online scan does
+this) before relying on `--offline`.
+
+### AI-assistant skills (`install-skill`)
+
+`docksec install-skill` writes DockSec usage instructions into the well-known context
+files for popular AI coding assistants, so an assistant working in your repo knows how to
+invoke DockSec:
+
+```bash
+docksec install-skill
+```
+
+This creates or updates:
+
+- `.claude/commands/docksec.md` (Claude Code slash command `/docksec`)
+- `.cursor/rules/docksec.mdc` (Cursor)
+- `AGENTS.md` (Codex CLI), `GEMINI.md` (Gemini CLI)
+- `.github/copilot-instructions.md` (GitHub Copilot)
+
+The files are plain text you can review and commit; nothing is executed. Re-running the
+command updates the DockSec section in place instead of duplicating it.
+
 ### Baseline / ratchet mode
 
 `--baseline FILE` lets you adopt `--fail-on` on an existing project without a wall of
@@ -220,8 +278,11 @@ severity is widened automatically so the gate can observe those findings.
 - **Deep Integration**: Combines Trivy (vulnerabilities), Hadolint (linting), and Docker Scout.
 - **Security Scoring**: Get a 0-100 score to track your security posture over time.
 - **Centralized Reporting**: All reports are neatly organized in `~/.docksec/results/` by default.
-- **Rich Formats**: Professional exports in HTML (interactive), PDF, JSON, and CSV.
+- **Rich Formats**: Professional exports in HTML (interactive), PDF, JSON, CSV, SARIF, and CycloneDX SBOM.
+- **Supply-Chain Ready**: Generate a CycloneDX SBOM (`--sbom`) of any image for Dependency-Track and other consumers.
+- **Offline Mode**: Scan fully air-gapped (`--offline`) using the local Trivy database, no network required.
 - **CI/CD Ready**: Designed for easy integration into GitHub Actions and build pipelines.
+- **AI-Assistant Skills**: `docksec install-skill` teaches Claude Code, Cursor, Copilot, and others how to run DockSec in your repo.
 - **GitHub Action**: Available on the GitHub Marketplace for automated security scans.
 
 ---
@@ -242,7 +303,8 @@ Legend: ✅ full support &nbsp; ⚠️ partial or caveated &nbsp; ❌ not suppor
 | Docker Compose (multi service) scanning | ✅ Yes (orchestration checks and per service scan) | ⚠️ Partial (config scan, no per service fan out) | ⚠️ Partial | ⚠️ Partial |
 | Baseline / ratchet mode (fail only on new findings) | ✅ Yes | ❌ No | ⚠️ Partial (platform policies) | ⚠️ Partial (platform policies) |
 | CI native output (SARIF for GitHub Code Scanning) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| SBOM export (CycloneDX / SPDX) | ❌ No (on the roadmap) | ✅ Yes | ✅ Yes | ✅ Yes |
+| SBOM export (CycloneDX) | ✅ Yes (`--sbom`) | ✅ Yes | ✅ Yes | ✅ Yes |
+| AI-assistant skill install (Claude Code, Cursor, Copilot) | ✅ Yes (`install-skill`) | ❌ No | ❌ No | ❌ No |
 | Runs fully offline / air gapped | ✅ Yes (local LLM via Ollama, scan only mode, no API key) | ⚠️ Yes for scanning (no remediation layer) | ❌ No (cloud platform) | ❌ No (hosted platform) |
 | Your image data stays on your network | ✅ Yes | ✅ Yes | ❌ No | ❌ No |
 | Bring your own LLM / model choice | ✅ Yes (OpenAI, Anthropic, Gemini, or local Ollama) | ⚠️ Not applicable | ❌ No (proprietary AI) | ❌ No (proprietary AI) |

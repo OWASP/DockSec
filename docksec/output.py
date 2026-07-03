@@ -207,6 +207,18 @@ def quick_take(items: Iterable[str]) -> None:
         _line(Text.assemble(("  - ", "cyan"), (item, "default")))
 
 
+def fix_commands(commands: Iterable[str]) -> None:
+    """Render a 'Suggested fixes' block of copy-pasteable upgrade hints."""
+    commands = [c for c in commands if c]
+    if is_quiet() or not commands:
+        return
+    console = get_console()
+    console.print()
+    _line(Text("Suggested fixes", style="bold cyan"))
+    for cmd in commands:
+        _line(Text.assemble(("  ", "default"), (cmd, "green")))
+
+
 def report_results(paths: Dict[str, str], results_dir: str) -> None:
     """List the report formats that were written and where."""
     if is_quiet():
