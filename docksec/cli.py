@@ -38,7 +38,18 @@ def main() -> None:
     """
     # Set CLI mode to suppress INFO logs for user-facing output
     os.environ["DOCKSEC_CLI_MODE"] = "true"
-    
+
+    # Subcommand dispatch (backward compatible): the historical CLI takes a
+    # positional Dockerfile, so we intercept known verbs as the first argument
+    # before argparse runs. Anything else falls through to the existing
+    # flag-based scan CLI unchanged.
+    if len(sys.argv) > 1 and sys.argv[1] == "install-skill":
+        from docksec import output
+        output.configure()
+        from docksec.install_skill import install_skill
+        install_skill()
+        return
+
     from docksec.enums import LLMProvider
     parser = argparse.ArgumentParser(description='Docker Security Analysis Tool')
     parser.add_argument('dockerfile', nargs='?', help='Path to the Dockerfile to analyze (optional when using --image-only or --compose)')
@@ -58,6 +69,8 @@ def main() -> None:
     parser.add_argument('--output-dir', dest='output_dir', metavar='DIR', help='Directory to write reports to (default: ~/.docksec/results or DOCKSEC_RESULTS_DIR)')
     parser.add_argument('--json', dest='json_stdout', action='store_true', help='Print scan results as JSON to stdout (no report files unless --format is also given)')
     parser.add_argument('--sarif', dest='sarif', action='store_true', help='Write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools')
+    parser.add_argument('--sbom', dest='sbom', action='store_true', help='Write a CycloneDX SBOM (.cdx.json) of the scanned image for supply-chain tooling (requires an image)')
+    parser.add_argument('--offline', dest='offline', action='store_true', help='Run without network access: use the local Trivy DB (no DB update) and skip AI analysis')
     parser.add_argument('--baseline', dest='baseline', metavar='FILE', help='Path to a baseline file; with --fail-on, only findings not present in the baseline trigger the gate')
     parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
@@ -162,6 +175,7 @@ def main() -> None:
         print("  docksec --image-only -i myapp:latest        # Scan only the image")
         print("  docksec --compose docker-compose.yml        # Scan compose file and its services")
         print("  docksec --ai-only Dockerfile                # AI analysis only")
+        print("  docksec install-skill                       # Install AI-assistant skill files")
         sys.exit(2)
     
     # Validate that the Dockerfile exists (if provided)
@@ -224,6 +238,14 @@ def main() -> None:
         run_compose_analysis = False
         mode_desc = "Full Analysis (AI + Scanner)"
     
+    # Offline mode: no network calls. AI providers all require network (except
+    # a local Ollama, but we keep this simple and predictable), so --offline
+    # forces local scanning + local scoring only. The scan still runs against
+    # the already-downloaded Trivy DB.
+    if args.offline:
+        run_ai = False
+        mode_desc = f"{mode_desc} (offline)"
+
     from docksec.config_manager import get_config
     from docksec.enums import LLMProvider
 
@@ -314,7 +336,7 @@ def main() -> None:
                 results = orchestrator.run_full_scan(severity)
 
                 # We need a scanner instance just for scoring and reporting
-                scanner = DockerSecurityScanner(None, None, results_dir=output_dir, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring)
+                scanner = DockerSecurityScanner(None, None, results_dir=output_dir, scan_only=not run_ai, skip_ai_scoring=args.skip_ai_scoring, offline=args.offline)
                 scanner.image_name = "Multiple Services"
                 scanner.dockerfile_path = args.compose
             else:
@@ -325,7 +347,8 @@ def main() -> None:
                     args.image,
                     results_dir=output_dir,
                     scan_only=not run_ai,
-                    skip_ai_scoring=args.skip_ai_scoring
+                    skip_ai_scoring=args.skip_ai_scoring,
+                    offline=args.offline
                 )
 
                 # Run appropriate scan based on mode
@@ -352,11 +375,23 @@ def main() -> None:
             if args.sarif:
                 report_paths["sarif"] = _generate_sarif_report(scanner, results)
 
+            # SBOM is opt-in via --sbom. It needs a real image to inventory, so
+            # it is skipped (with a note) for compose runs and when no image was
+            # scanned.
+            if args.sbom:
+                if run_compose_analysis or not args.image:
+                    output.warn("--sbom needs a single image (-i); skipping SBOM for this run.")
+                else:
+                    sbom_path = _generate_sbom_report(scanner)
+                    if sbom_path:
+                        report_paths["sbom"] = sbom_path
+
             # Run advanced scan if available and image is provided (skip for compose
             # and for --json, since Docker Scout output is not part of the payload
-            # and would otherwise print to stdout alongside it)
+            # and would otherwise print to stdout alongside it; skip in --offline
+            # since Docker Scout reaches out to Docker's servers)
             if hasattr(scanner, 'advanced_scan') and args.image and not run_compose_analysis \
-                    and not args.json_stdout:
+                    and not args.json_stdout and not args.offline:
                 output.section("Advanced scan (Docker Scout)")
                 scanner.advanced_scan()
 
@@ -472,6 +507,22 @@ def _generate_sarif_report(scanner, results):
     return generator.generate_sarif_report(results, tool_version=get_version())
 
 
+def _generate_sbom_report(scanner):
+    """Generate a CycloneDX SBOM for the scanned image and return its path.
+
+    The BOM is produced by Trivy via the scanner (full package inventory) and
+    written by ReportGenerator with DockSec stamped into the tool metadata.
+    Returns an empty string if the image could not be inventoried.
+    """
+    from docksec.report_generator import ReportGenerator
+
+    sbom_json = scanner.generate_sbom()
+    if not sbom_json:
+        return ""
+    generator = ReportGenerator(scanner.image_name or "docksec_report", scanner.RESULTS_DIR)
+    return generator.generate_cyclonedx_report(sbom_json, tool_version=get_version())
+
+
 def _print_json_results(results, scanner, report_paths):
     """Print scan results as a single JSON object to stdout.
 
@@ -515,6 +566,7 @@ def _render_scan_summary(output, args, scanner, results, report_paths,
     output.severity_table(counts)
     output.score(getattr(scanner, "analysis_score", None))
     output.quick_take(_quick_take_lines(results, counts, run_ai))
+    output.fix_commands(_suggest_fix_commands(results))
     if report_paths:
         output.report_results(report_paths, scanner.RESULTS_DIR)
     output.next_command(_suggest_next_command(args, results, run_ai, run_compose_analysis))
@@ -524,10 +576,17 @@ def _quick_take_lines(results, counts, run_ai):
     """Build a few high-signal lines summarizing what matters most."""
     lines = []
 
+    vulnerabilities = results.get("json_data", [])
     total_vulns = sum(counts.get(sev, 0) for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"))
     if total_vulns:
         crit, high = counts.get("CRITICAL", 0), counts.get("HIGH", 0)
         lines.append(f"{total_vulns} security findings ({crit} critical, {high} high)")
+
+        # How many findings have a known fixed version available upstream — a
+        # high-signal, actionable number (mirrors cve-lite's fixable count).
+        fixable = sum(1 for v in vulnerabilities if v.get("FixedVersion"))
+        if fixable:
+            lines.append(f"{fixable} of {total_vulns} have a fixed version available upstream")
 
     dockerfile_scan = results.get("dockerfile_scan", {})
     if not dockerfile_scan.get("skipped") and not dockerfile_scan.get("success"):
@@ -578,6 +637,34 @@ def _format_hadolint_line(line):
     if line_no.isdigit():
         return f"{rest} (line {line_no})"
     return rest
+
+
+def _suggest_fix_commands(results, limit=5):
+    """Build copy-pasteable upgrade hints from findings that have a fixed version.
+
+    Trivy reports the first fixed version per vulnerable package; we surface the
+    most severe fixable packages as concrete 'upgrade PKG to VERSION' lines so a
+    user has an immediate next action, not just a CVE list. Deduplicated by
+    package name (a package can carry several CVEs), most severe first.
+    """
+    from docksec.enums import Severity
+
+    fixable = [v for v in results.get("json_data", []) if v.get("FixedVersion") and v.get("PkgName")]
+    fixable.sort(key=lambda v: Severity.rank(v.get("Severity")), reverse=True)
+
+    seen = set()
+    commands = []
+    for v in fixable:
+        pkg = v.get("PkgName")
+        if pkg in seen:
+            continue
+        seen.add(pkg)
+        installed = v.get("InstalledVersion") or "current"
+        fixed = v.get("FixedVersion")
+        commands.append(f"upgrade {pkg} {installed} -> {fixed}")
+        if len(commands) >= limit:
+            break
+    return commands
 
 
 def _suggest_next_command(args, results, run_ai, run_compose_analysis):

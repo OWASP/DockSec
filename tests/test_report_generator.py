@@ -429,3 +429,43 @@ def test_sarif_rule_omits_help_uri_when_no_primary_url():
     vuln = {"VulnerabilityID": "compose-x", "Severity": "LOW", "Title": "Issue"}
     rule = ReportGenerator._sarif_rule("compose-x", vuln)
     assert "helpUri" not in rule
+
+
+# ---------- CYCLONEDX SBOM TESTS ----------
+
+
+def test_cyclonedx_report_writes_file_and_stamps_docksec(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    trivy_bom = json.dumps({
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "metadata": {"tools": {"components": []}},
+        "components": [{"type": "library", "name": "openssl", "version": "1.1.1"}],
+    })
+    path = rg.generate_cyclonedx_report(trivy_bom, tool_version="9.9.9")
+    assert os.path.exists(path)
+    assert path.endswith(".cdx.json")
+    written = json.loads(open(path).read())
+    assert written["bomFormat"] == "CycloneDX"
+    # DockSec stamped into the 1.5-style tools.components list.
+    names = [c.get("name") for c in written["metadata"]["tools"]["components"]]
+    assert "DockSec" in names
+
+
+def test_cyclonedx_report_handles_1_4_tools_list(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    trivy_bom = json.dumps({
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.4",
+        "metadata": {"tools": [{"vendor": "aquasecurity", "name": "trivy", "version": "0.68"}]},
+        "components": [],
+    })
+    path = rg.generate_cyclonedx_report(trivy_bom, tool_version="1.0")
+    written = json.loads(open(path).read())
+    vendors = [t.get("name") for t in written["metadata"]["tools"]]
+    assert "trivy" in vendors and "DockSec" in vendors
+
+
+def test_cyclonedx_report_rejects_invalid_json(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    assert rg.generate_cyclonedx_report("not json {", tool_version="1.0") == ""

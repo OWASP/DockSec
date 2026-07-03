@@ -190,6 +190,69 @@ class ReportGenerator:
             output.error(f"Failed to save SARIF report: {e}")
             return ""
 
+    def generate_cyclonedx_report(self, sbom_json: str, tool_version: str = "unknown") -> str:
+        """
+        Write a CycloneDX SBOM to disk.
+
+        The SBOM document itself is produced by Trivy (see
+        DockerSecurityScanner.generate_sbom), which emits a spec-compliant
+        CycloneDX BOM covering the full package inventory of the image. This
+        method validates it is JSON, stamps DockSec into the tool metadata so
+        downstream consumers can see which scanner emitted it, and writes it to
+        a ``.cdx.json`` file next to the other reports.
+
+        Args:
+            sbom_json: Raw CycloneDX JSON string from Trivy.
+            tool_version: DockSec version string to record in BOM metadata.
+
+        Returns:
+            Path to the generated SBOM file, or empty string on failure.
+        """
+        output_file = self._get_safe_filename("cdx.json")
+        logger.info(f"Generating CycloneDX SBOM: {output_file}")
+
+        try:
+            bom = json.loads(sbom_json)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"SBOM is not valid JSON: {e}")
+            output.error(f"Failed to parse SBOM: {e}")
+            return ""
+
+        # Record DockSec in the tool metadata without disturbing Trivy's own
+        # entry, so the BOM credits both the emitter and the wrapper.
+        try:
+            metadata = bom.setdefault("metadata", {})
+            tools = metadata.get("tools")
+            docksec_tool = {"vendor": "OWASP", "name": "DockSec", "version": tool_version}
+            if isinstance(tools, dict):
+                # CycloneDX 1.5+ shape: {"components": [...]}
+                components = tools.setdefault("components", [])
+                if isinstance(components, list):
+                    components.append({
+                        "type": "application",
+                        "author": "OWASP",
+                        "name": "DockSec",
+                        "version": tool_version,
+                    })
+            elif isinstance(tools, list):
+                # CycloneDX 1.4 shape: [{"vendor","name","version"}]
+                tools.append(docksec_tool)
+            else:
+                metadata["tools"] = [docksec_tool]
+        except Exception as e:  # metadata stamping is best-effort, never fatal
+            logger.debug(f"Could not stamp DockSec into SBOM metadata: {e}")
+
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(bom, f, indent=2)
+            component_count = len(bom.get("components", []) or [])
+            logger.info(f"CycloneDX SBOM saved with {component_count} components")
+            return output_file
+        except Exception as e:
+            logger.error(f"Error saving SBOM: {e}", exc_info=True)
+            output.error(f"Failed to save SBOM: {e}")
+            return ""
+
     def _sarif_artifact_uri(self, results: Dict) -> str:
         """Resolve the file SARIF results should point at.
 
