@@ -818,6 +818,7 @@ class ReportGenerator:
             table_html = """
             <div class="section">
                 <h2>Detailed Vulnerabilities</h2>
+                <div class="table-scroll">
                 <table class="vulnerability-table">
                     <thead>
                         <tr>
@@ -875,6 +876,7 @@ class ReportGenerator:
             table_html += """
                     </tbody>
                 </table>
+                </div>
             """
 
             if len(vulnerabilities) > 50:

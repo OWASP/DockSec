@@ -85,27 +85,18 @@ class SecurityScoreCalculator:
             score = score_response.score
             
             logger.info(f"Security score calculated: {score}")
-            print(f"Security Score: {score}/100")
-            
-            # Provide contextual feedback based on score
-            if score >= 90:
-                print("[EXCELLENT] Excellent security posture!")
-            elif score >= 70:
-                print("[GOOD] Good security, but some improvements recommended")
-            elif score >= 50:
-                print("[FAIR] Fair security - multiple issues need attention")
-            else:
-                print("[POOR] Poor security - immediate action required")
-            
+            # The score and its rating band are rendered by the CLI summary
+            # (docksec.output.score); this method only computes and returns it.
             return score
-            
+
         except Exception as e:
+            from docksec import output
             logger.error(f"Error calculating security score: {e}", exc_info=True)
-            print(f"\n[ERROR] Error calculating security score: {e}")
-            print("\nTroubleshooting:")
-            print("  1. Check your OpenAI API key and credits")
-            print("  2. Verify network connectivity")
-            print("  3. Review scan results format")
+            output.error(f"Error calculating security score: {e}")
+            output.info("Troubleshooting:")
+            output.detail("  1. Check your OpenAI API key and credits")
+            output.detail("  2. Verify network connectivity")
+            output.detail("  3. Review scan results format")
             # Return a default score in case of error
             logger.warning("Returning default score of 0 due to calculation error")
             return 0.0
