@@ -445,7 +445,8 @@ def test_cyclonedx_report_writes_file_and_stamps_docksec(tmp_path):
     path = rg.generate_cyclonedx_report(trivy_bom, tool_version="9.9.9")
     assert os.path.exists(path)
     assert path.endswith(".cdx.json")
-    written = json.loads(open(path).read())
+    with open(path, encoding="utf-8") as f:
+        written = json.load(f)
     assert written["bomFormat"] == "CycloneDX"
     # DockSec stamped into the 1.5-style tools.components list.
     names = [c.get("name") for c in written["metadata"]["tools"]["components"]]
@@ -461,7 +462,8 @@ def test_cyclonedx_report_handles_1_4_tools_list(tmp_path):
         "components": [],
     })
     path = rg.generate_cyclonedx_report(trivy_bom, tool_version="1.0")
-    written = json.loads(open(path).read())
+    with open(path, encoding="utf-8") as f:
+        written = json.load(f)
     vendors = [t.get("name") for t in written["metadata"]["tools"]]
     assert "trivy" in vendors and "DockSec" in vendors
 

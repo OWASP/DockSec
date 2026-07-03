@@ -759,6 +759,9 @@ class TestSbomAndOffline(unittest.TestCase):
                 try:
                     main()
                 except SystemExit:
+                    # main() exits via sys.exit(); the scan pass has already run
+                    # and constructed the scanner by this point, which is all
+                    # this test inspects.
                     pass
             _, kwargs = scanner_cls.call_args
             self.assertTrue(kwargs.get('offline'))
