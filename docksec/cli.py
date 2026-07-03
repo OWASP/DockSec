@@ -402,6 +402,48 @@ def main() -> None:
             output.error(f"Scanner failed: {e}")
             scan_ok = False
 
+    # AI-only report: when AI analysis ran but no scan did (e.g. a Dockerfile
+    # with no -i image, or --ai-only), the scan block above never generated a
+    # report. Write the AI findings out here so they're available in full,
+    # instead of leaving the user with only the truncated on-screen summary.
+    if run_ai and ai_ok and not run_scan and ai_findings and not args.json_stdout:
+        try:
+            from docksec.docker_scanner import DockerSecurityScanner
+            from datetime import datetime
+
+            ai_results = {
+                "dockerfile_scan": {
+                    "success": True,
+                    "output": "Skipped - AI analysis only",
+                    "skipped": True,
+                },
+                "image_scan": {
+                    "success": True,
+                    "output": "Skipped - AI analysis only",
+                    "skipped": True,
+                },
+                "json_data": [],
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "image_name": "N/A - AI analysis only",
+                "dockerfile_path": args.compose if run_compose_analysis else args.dockerfile,
+                "scan_mode": "compose" if run_compose_analysis else "ai_only",
+                "ai_findings": ai_findings,
+            }
+
+            ai_scanner = DockerSecurityScanner(
+                None, None, results_dir=output_dir, scan_only=True,
+                skip_ai_scoring=args.skip_ai_scoring,
+            )
+            report_paths = ai_scanner.generate_all_reports(ai_results, formats=report_formats)
+            if args.sarif:
+                report_paths["sarif"] = _generate_sarif_report(ai_scanner, ai_results)
+
+            if report_paths:
+                output.report_results(report_paths, output_dir)
+        except Exception as e:
+            output.error(f"Failed to write AI analysis report: {e}")
+            ai_ok = False
+
     # Exit codes (CI-friendly): 0 clean, 1 findings at/above --fail-on,
     # 2 usage error, 3 tool/runtime error.
     if not run_ai and not run_scan:

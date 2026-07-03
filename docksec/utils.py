@@ -336,12 +336,10 @@ def analyze_security(response: AnalyzesResponse, compact: bool = True, report_pa
     print_section("Exposed Credentials", exposed_credentials, "magenta", max_items)
     print_section("Remediation Steps", remediation, "green", max_items)
     
-    # Build message with report location if provided
-    if report_path:
-        console.print(f"\n[dim]For detailed AI analysis, check the generated reports at: {report_path}[/]")
-    else:
-        console.print("\n[dim]For detailed AI analysis, check the generated reports[/]")
-    
+    # Note: the "reports written" message is emitted by the CLI after reports
+    # are actually generated (see cli.py), so it isn't printed here where we
+    # don't yet know whether a report file will be written for this run.
+
     # Return findings for report generation
     return {
         "vulnerabilities": vulnerabilities,
