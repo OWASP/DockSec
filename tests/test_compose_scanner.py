@@ -1,4 +1,5 @@
 import pytest
+from docksec.cli import _quick_take_lines
 from docksec.compose_scanner import ComposeScanner, ComposeOrchestrator
 
 @pytest.fixture
@@ -144,3 +145,59 @@ def test_compose_orchestrator_offline(valid_compose_file, mocker):
     assert results['scan_mode'] == 'compose'
     assert results['dockerfile_scan']['success'] is True
     assert results['image_scan']['success'] is True
+
+def test_compose_orchestrator_reports_failed_service_scans(valid_compose_file, mocker):
+    # Mock DockerSecurityScanner to simulate an image scan failure for one service.
+    mock_scanner = mocker.patch('docksec.compose_scanner.DockerSecurityScanner')
+    mock_instance = mock_scanner.return_value
+    mock_instance.run_image_only_scan.return_value = {
+        'image_scan': {'success': False, 'output': 'image not found locally'},
+        'json_data': []
+    }
+
+    orchestrator = ComposeOrchestrator(valid_compose_file, scan_only=True)
+    results = orchestrator.run_full_scan()
+
+    assert results['image_scan']['success'] is False
+    assert results['services_scanned'] == 2
+    assert results['failed_service_scans'] == [
+        {
+            'service': 'web',
+            'scan_type': 'image',
+            'reason': 'image not found locally',
+        },
+        {
+            'service': 'db',
+            'scan_type': 'image',
+            'reason': 'image not found locally',
+        },
+    ]
+
+def test_quick_take_mentions_failed_compose_service_scans():
+    results = {
+        'json_data': [],
+        'failed_service_scans': [
+            {
+                'service': 'web',
+                'scan_type': 'image',
+                'reason': 'image not found locally',
+            },
+            {
+                'service': 'db',
+                'scan_type': 'image',
+                'reason': 'image not found locally',
+            },
+        ],
+        'services_scanned': 3,
+    }
+
+    lines = _quick_take_lines(
+        results,
+        {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0},
+        run_ai=True
+    )
+
+    assert (
+        lines[0]
+        == "2 of 3 services could not be scanned (image not found locally): web, db"
+    )
