@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTML report dropped all AI findings**: the HTML report only rendered Trivy's package vulnerabilities, never the LLM findings (vulnerabilities, best practices, security risks, exposed credentials, remediation steps). For an AI-only run (Dockerfile analysis with no image) there are no Trivy vulnerabilities, so the HTML showed nothing but the security score even though the terminal reported dozens of findings. The complete AI findings now render in a dedicated "AI Dockerfile Analysis" section, so the report is the authoritative place to read the full list that the terminal only previews. (The PDF and JSON reports already carried these findings.)
 - **`get_llm()` crashed with `NameError` on any LLM init failure**: the exception handler referenced a module-level `console` defined later in the file, so a bad API key / no credits / network error raised `NameError: name 'console' is not defined` instead of showing the troubleshooting steps. Now routed through the shared output layer.
 
 ## [2026.7.3] - 2026-07-02

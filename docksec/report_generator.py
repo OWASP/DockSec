@@ -821,6 +821,13 @@ class ReportGenerator:
         else:
             template_vars["CONFIG_ANALYSIS_SECTION"] = ""
 
+        # AI Dockerfile Analysis Section. Renders the full LLM findings (the
+        # terminal shows only a truncated preview), so this is where the user
+        # reads the complete list. Empty when no AI analysis ran.
+        template_vars["AI_ANALYSIS_SECTION"] = self._build_ai_analysis_html(
+            results.get("ai_findings")
+        )
+
         # Dockerfile Section
         if not results["dockerfile_scan"].get("skipped", False):
             if results["dockerfile_scan"]["success"]:
@@ -949,6 +956,55 @@ class ReportGenerator:
             template_vars["DETAILED_VULNERABILITIES_SECTION"] = table_html
 
         return template_vars
+
+    def _build_ai_analysis_html(self, ai_findings: Optional[Dict]) -> str:
+        """
+        Build the AI Dockerfile Analysis HTML section from LLM findings.
+
+        Renders every finding in full (unlike the truncated terminal preview)
+        so the report is the authoritative place to read the complete list.
+
+        Args:
+            ai_findings: The "ai_findings" dict produced by analyze_security,
+                or None when no AI analysis ran.
+
+        Returns:
+            HTML string for the section, or "" when there are no findings.
+        """
+        if not ai_findings:
+            return ""
+
+        # (key, heading, config-list severity class) for each category.
+        categories = [
+            ("vulnerabilities", "Vulnerabilities", "high"),
+            ("security_risks", "Security Risks", "high"),
+            ("exposed_credentials", "Exposed Credentials", "high"),
+            ("best_practices", "Best Practices", "medium"),
+            ("remediation", "Remediation Steps", "low"),
+        ]
+
+        blocks = []
+        for key, heading, list_class in categories:
+            items = ai_findings.get(key) or []
+            if not items:
+                continue
+            list_items = "".join(
+                f"<li>{self._escape_html(str(item))}</li>" for item in items
+            )
+            blocks.append(
+                f'<div class="config-category">'
+                f"<h4>{self._escape_html(heading)} ({len(items)})</h4>"
+                f'<ul class="config-list {list_class}">{list_items}</ul>'
+                f"</div>"
+            )
+
+        if not blocks:
+            return ""
+
+        return (
+            '<div class="section"><h2>AI Dockerfile Analysis</h2>'
+            '<div class="config-issues">' + "".join(blocks) + "</div></div>"
+        )
 
     def _escape_html(self, text: str) -> str:
         """
