@@ -210,7 +210,7 @@ class DockerSecurityScanner:
                     title = title[:57] + "..."
                 ui.detail(f"    - [{vuln.get('Severity')}] {vuln.get('VulnerabilityID', 'N/A')}: {title}")
     
-    def __init__(self, dockerfile_path: Optional[str], image_name: Optional[str], results_dir: str = RESULTS_DIR, scan_only: bool = False, skip_ai_scoring: bool = False):
+    def __init__(self, dockerfile_path: Optional[str], image_name: Optional[str], results_dir: str = RESULTS_DIR, scan_only: bool = False, skip_ai_scoring: bool = False, offline: bool = False):
         """
         Initialize the Docker Security Scanner with a Dockerfile path and/or image name.
         Verifies that required tools are installed and the specified files exist.
@@ -242,6 +242,10 @@ class DockerSecurityScanner:
         self.RESULTS_DIR = results_dir
         self.scan_only = scan_only
         self.skip_ai_scoring = skip_ai_scoring
+        # Offline mode: pass Trivy --offline-scan --skip-db-update so no network
+        # is used (uses the already-downloaded Trivy vuln DB). Threaded into the
+        # image scan calls and SBOM generation below.
+        self.offline = offline
         self.analysis_score = None  # Initialize to avoid AttributeError when accessed before calculation
         
         # Initialize score chain: skip if scan_only or skip_ai_scoring flags are set
@@ -515,6 +519,7 @@ class DockerSecurityScanner:
                     "Target": target,
                     "PkgName": vulnerability.get("PkgName"),
                     "InstalledVersion": vulnerability.get("InstalledVersion"),
+                    "FixedVersion": vulnerability.get("FixedVersion"),
                     "Severity": vulnerability.get("Severity"),
                     "Title": vulnerability.get("Title"),
                     "Description": description,
@@ -551,23 +556,31 @@ class DockerSecurityScanner:
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
                 TimeElapsedColumn(),
-                console=None
+                # Route the spinner through the shared output console so it
+                # honors --json (which redirects human output to stderr) and
+                # never pollutes the machine-readable stdout payload.
+                console=ui.get_console(),
+                disable=ui.is_quiet(),
             ) as progress:
                 scan_task = progress.add_task(
                     f"[cyan]Scanning {self.image_name}...",
                     total=None
                 )
                 
+                trivy_cmd = [
+                    'trivy',
+                    'image',
+                    '-f', 'json',
+                    '--severity', severity,
+                    '--no-progress',
+                    '--skip-version-check',
+                ]
+                if getattr(self, 'offline', False):
+                    trivy_cmd += ['--offline-scan', '--skip-db-update']
+                trivy_cmd.append(self.image_name)
+
                 result = subprocess.run(
-                    [
-                        'trivy',
-                        'image',
-                        '-f', 'json',
-                        '--severity', severity,
-                        '--no-progress',
-                        '--skip-version-check',
-                        self.image_name
-                    ],
+                    trivy_cmd,
                     capture_output=True,
                     text=True,
                     encoding='utf-8',
@@ -625,16 +638,20 @@ class DockerSecurityScanner:
         logger.info(f"Starting Trivy scan for image: {self.image_name} with severity: {severity}")
         
         try:
+            trivy_cmd = [
+                'trivy',
+                'image',
+                '--severity', severity,
+                '--no-progress',
+                '--skip-version-check',
+                '--quiet',
+            ]
+            if getattr(self, 'offline', False):
+                trivy_cmd += ['--offline-scan', '--skip-db-update']
+            trivy_cmd.append(self.image_name)
+
             result = subprocess.run(
-                [
-                    'trivy',
-                    'image',
-                    '--severity', severity,
-                    '--no-progress',
-                    '--skip-version-check',
-                    '--quiet',
-                    self.image_name
-                ],
+                trivy_cmd,
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
@@ -702,8 +719,61 @@ class DockerSecurityScanner:
         except FileNotFoundError:
             # Silently fail if tool not found, as it's optional
             result_dict['error'] = "Docker Scout not found"
-        
+
         return result_dict
+
+    def generate_sbom(self) -> Optional[str]:
+        """
+        Generate a CycloneDX SBOM for the image using Trivy's native exporter.
+
+        Trivy produces a spec-compliant CycloneDX 1.x document that lists every
+        package component in the image plus any known vulnerabilities, which is
+        exactly what supply-chain consumers (Dependency-Track, GitHub, etc.)
+        expect. Writing it here (rather than re-deriving a BOM from the filtered
+        findings) keeps DockSec's SBOM faithful to the full package inventory,
+        not just the severity-filtered vulnerability subset.
+
+        Returns:
+            The raw CycloneDX JSON string, or None if generation failed. The
+            caller (ReportGenerator) owns writing it to a file.
+        """
+        if not self.image_name:
+            return None
+
+        cmd = ['trivy', 'image', '--format', 'cyclonedx', '--no-progress',
+               '--skip-version-check', '--quiet']
+        if getattr(self, 'offline', False):
+            cmd += ['--offline-scan', '--skip-db-update']
+        cmd.append(self.image_name)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                timeout=600,
+                shell=False
+            )
+            if result.returncode != 0 or not result.stdout:
+                logger.warning(
+                    f"Trivy SBOM generation failed for {self.image_name}: "
+                    f"{(result.stderr or '')[:200]}"
+                )
+                ui.warn("SBOM generation failed; see logs for details.")
+                return None
+            return result.stdout
+        except subprocess.TimeoutExpired:
+            ui.error("SBOM generation timed out after 600 seconds")
+            return None
+        except FileNotFoundError:
+            ui.error("Trivy not found in PATH; cannot generate SBOM.")
+            return None
+        except Exception as e:
+            logger.error(f"SBOM generation failed: {e}", exc_info=True)
+            ui.error(f"SBOM generation failed: {e}")
+            return None
+
     def run_full_scan(self, severity: str = "CRITICAL,HIGH") -> Dict:
         """
         Run all security scans and return results.

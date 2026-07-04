@@ -190,6 +190,69 @@ class ReportGenerator:
             output.error(f"Failed to save SARIF report: {e}")
             return ""
 
+    def generate_cyclonedx_report(self, sbom_json: str, tool_version: str = "unknown") -> str:
+        """
+        Write a CycloneDX SBOM to disk.
+
+        The SBOM document itself is produced by Trivy (see
+        DockerSecurityScanner.generate_sbom), which emits a spec-compliant
+        CycloneDX BOM covering the full package inventory of the image. This
+        method validates it is JSON, stamps DockSec into the tool metadata so
+        downstream consumers can see which scanner emitted it, and writes it to
+        a ``.cdx.json`` file next to the other reports.
+
+        Args:
+            sbom_json: Raw CycloneDX JSON string from Trivy.
+            tool_version: DockSec version string to record in BOM metadata.
+
+        Returns:
+            Path to the generated SBOM file, or empty string on failure.
+        """
+        output_file = self._get_safe_filename("cdx.json")
+        logger.info(f"Generating CycloneDX SBOM: {output_file}")
+
+        try:
+            bom = json.loads(sbom_json)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(f"SBOM is not valid JSON: {e}")
+            output.error(f"Failed to parse SBOM: {e}")
+            return ""
+
+        # Record DockSec in the tool metadata without disturbing Trivy's own
+        # entry, so the BOM credits both the emitter and the wrapper.
+        try:
+            metadata = bom.setdefault("metadata", {})
+            tools = metadata.get("tools")
+            docksec_tool = {"vendor": "OWASP", "name": "DockSec", "version": tool_version}
+            if isinstance(tools, dict):
+                # CycloneDX 1.5+ shape: {"components": [...]}
+                components = tools.setdefault("components", [])
+                if isinstance(components, list):
+                    components.append({
+                        "type": "application",
+                        "author": "OWASP",
+                        "name": "DockSec",
+                        "version": tool_version,
+                    })
+            elif isinstance(tools, list):
+                # CycloneDX 1.4 shape: [{"vendor","name","version"}]
+                tools.append(docksec_tool)
+            else:
+                metadata["tools"] = [docksec_tool]
+        except Exception as e:  # metadata stamping is best-effort, never fatal
+            logger.debug(f"Could not stamp DockSec into SBOM metadata: {e}")
+
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(bom, f, indent=2)
+            component_count = len(bom.get("components", []) or [])
+            logger.info(f"CycloneDX SBOM saved with {component_count} components")
+            return output_file
+        except Exception as e:
+            logger.error(f"Error saving SBOM: {e}", exc_info=True)
+            output.error(f"Failed to save SBOM: {e}")
+            return ""
+
     def _sarif_artifact_uri(self, results: Dict) -> str:
         """Resolve the file SARIF results should point at.
 
@@ -758,6 +821,13 @@ class ReportGenerator:
         else:
             template_vars["CONFIG_ANALYSIS_SECTION"] = ""
 
+        # AI Dockerfile Analysis Section. Renders the full LLM findings (the
+        # terminal shows only a truncated preview), so this is where the user
+        # reads the complete list. Empty when no AI analysis ran.
+        template_vars["AI_ANALYSIS_SECTION"] = self._build_ai_analysis_html(
+            results.get("ai_findings")
+        )
+
         # Dockerfile Section
         if not results["dockerfile_scan"].get("skipped", False):
             if results["dockerfile_scan"]["success"]:
@@ -818,6 +888,7 @@ class ReportGenerator:
             table_html = """
             <div class="section">
                 <h2>Detailed Vulnerabilities</h2>
+                <div class="table-scroll">
                 <table class="vulnerability-table">
                     <thead>
                         <tr>
@@ -875,6 +946,7 @@ class ReportGenerator:
             table_html += """
                     </tbody>
                 </table>
+                </div>
             """
 
             if len(vulnerabilities) > 50:
@@ -884,6 +956,55 @@ class ReportGenerator:
             template_vars["DETAILED_VULNERABILITIES_SECTION"] = table_html
 
         return template_vars
+
+    def _build_ai_analysis_html(self, ai_findings: Optional[Dict]) -> str:
+        """
+        Build the AI Dockerfile Analysis HTML section from LLM findings.
+
+        Renders every finding in full (unlike the truncated terminal preview)
+        so the report is the authoritative place to read the complete list.
+
+        Args:
+            ai_findings: The "ai_findings" dict produced by analyze_security,
+                or None when no AI analysis ran.
+
+        Returns:
+            HTML string for the section, or "" when there are no findings.
+        """
+        if not ai_findings:
+            return ""
+
+        # (key, heading, config-list severity class) for each category.
+        categories = [
+            ("vulnerabilities", "Vulnerabilities", "high"),
+            ("security_risks", "Security Risks", "high"),
+            ("exposed_credentials", "Exposed Credentials", "high"),
+            ("best_practices", "Best Practices", "medium"),
+            ("remediation", "Remediation Steps", "low"),
+        ]
+
+        blocks = []
+        for key, heading, list_class in categories:
+            items = ai_findings.get(key) or []
+            if not items:
+                continue
+            list_items = "".join(
+                f"<li>{self._escape_html(str(item))}</li>" for item in items
+            )
+            blocks.append(
+                f'<div class="config-category">'
+                f"<h4>{self._escape_html(heading)} ({len(items)})</h4>"
+                f'<ul class="config-list {list_class}">{list_items}</ul>'
+                f"</div>"
+            )
+
+        if not blocks:
+            return ""
+
+        return (
+            '<div class="section"><h2>AI Dockerfile Analysis</h2>'
+            '<div class="config-issues">' + "".join(blocks) + "</div></div>"
+        )
 
     def _escape_html(self, text: str) -> str:
         """
