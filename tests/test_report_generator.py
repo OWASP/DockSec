@@ -256,6 +256,61 @@ def test_html_special_characters_are_escaped(tmp_path):
     assert "&lt;script&gt;" in content
 
 
+def test_html_renders_full_ai_findings(tmp_path):
+    # AI-only runs have no Trivy vulnerabilities; the AI findings must still
+    # appear in full in the HTML (the terminal shows only a truncated preview).
+    results = make_results([])
+    results["scan_mode"] = "ai_only"
+    vulns = [f"AI vuln {i}" for i in range(1, 11)]
+    results["ai_findings"] = {
+        "vulnerabilities": vulns,
+        "best_practices": ["Pin the base image"],
+        "security_risks": ["Runs as root"],
+        "exposed_credentials": ["API_KEY=sk-prod-abc123"],
+        "remediation": ["Rotate the leaked key"],
+    }
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    output_path = rg.generate_html_report(results)
+    with open(output_path, encoding="utf-8") as f:
+        content = f.read()
+
+    assert "<h2>AI Dockerfile Analysis</h2>" in content
+    assert "Vulnerabilities (10)" in content
+    # Every finding is rendered, not just the terminal preview's first few.
+    for vuln in vulns:
+        assert vuln in content
+    assert "Pin the base image" in content
+    assert "API_KEY=sk-prod-abc123" in content
+    assert "Rotate the leaked key" in content
+
+
+def test_html_ai_findings_are_escaped(tmp_path):
+    results = make_results([])
+    results["scan_mode"] = "ai_only"
+    results["ai_findings"] = {
+        "vulnerabilities": ["<script>alert('xss')</script>"],
+        "best_practices": [],
+        "security_risks": [],
+        "exposed_credentials": [],
+        "remediation": [],
+    }
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    output_path = rg.generate_html_report(results)
+    with open(output_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "<script>alert" not in content
+    assert "&lt;script&gt;" in content
+
+
+def test_html_omits_ai_section_without_findings(tmp_path):
+    results = make_results([])  # no ai_findings key
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    output_path = rg.generate_html_report(results)
+    with open(output_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "<h2>AI Dockerfile Analysis</h2>" not in content
+
+
 # ---------- FORMAT SELECTION TESTS ----------
 
 
@@ -429,3 +484,45 @@ def test_sarif_rule_omits_help_uri_when_no_primary_url():
     vuln = {"VulnerabilityID": "compose-x", "Severity": "LOW", "Title": "Issue"}
     rule = ReportGenerator._sarif_rule("compose-x", vuln)
     assert "helpUri" not in rule
+
+
+# ---------- CYCLONEDX SBOM TESTS ----------
+
+
+def test_cyclonedx_report_writes_file_and_stamps_docksec(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    trivy_bom = json.dumps({
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "metadata": {"tools": {"components": []}},
+        "components": [{"type": "library", "name": "openssl", "version": "1.1.1"}],
+    })
+    path = rg.generate_cyclonedx_report(trivy_bom, tool_version="9.9.9")
+    assert os.path.exists(path)
+    assert path.endswith(".cdx.json")
+    with open(path, encoding="utf-8") as f:
+        written = json.load(f)
+    assert written["bomFormat"] == "CycloneDX"
+    # DockSec stamped into the 1.5-style tools.components list.
+    names = [c.get("name") for c in written["metadata"]["tools"]["components"]]
+    assert "DockSec" in names
+
+
+def test_cyclonedx_report_handles_1_4_tools_list(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    trivy_bom = json.dumps({
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.4",
+        "metadata": {"tools": [{"vendor": "aquasecurity", "name": "trivy", "version": "0.68"}]},
+        "components": [],
+    })
+    path = rg.generate_cyclonedx_report(trivy_bom, tool_version="1.0")
+    with open(path, encoding="utf-8") as f:
+        written = json.load(f)
+    vendors = [t.get("name") for t in written["metadata"]["tools"]]
+    assert "trivy" in vendors and "DockSec" in vendors
+
+
+def test_cyclonedx_report_rejects_invalid_json(tmp_path):
+    rg = ReportGenerator(image_name="myapp:latest", results_dir=str(tmp_path))
+    assert rg.generate_cyclonedx_report("not json {", tool_version="1.0") == ""

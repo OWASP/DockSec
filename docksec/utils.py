@@ -263,15 +263,20 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             raise ValueError(f"Unsupported LLM provider: {provider}. Supported: {LLMProvider.values()}")
         
     except Exception as e:
+        # Route through the shared output layer rather than a module-level
+        # Rich console. get_llm() runs before the module-level `console` below
+        # is defined, so referencing it here raised NameError and masked the
+        # real initialization error with the troubleshooting steps never shown.
+        from docksec import output
         logger.error(f"Failed to initialize LLM: {str(e)}")
-        console.print(f"\n[red]Error initializing AI features:[/red] {str(e)}")
-        console.print("\n[yellow]Troubleshooting steps:[/yellow]")
-        console.print("1. Verify your API key is correct for the selected provider")
-        console.print("2. Check your internet connection")
-        console.print("3. Verify your account has available credits")
-        console.print("4. Try using --scan-only mode if you don't need AI features")
-        console.print(f"5. Current provider: {config.llm_provider if 'config' in locals() else 'unknown'}")
-        console.print("6. Set LLM_PROVIDER environment variable to change provider (openai/anthropic/google/ollama)")
+        output.error(f"Error initializing AI features: {str(e)}")
+        output.info("Troubleshooting steps:")
+        output.detail("  1. Verify your API key is correct for the selected provider")
+        output.detail("  2. Check your internet connection")
+        output.detail("  3. Verify your account has available credits")
+        output.detail("  4. Try using --scan-only mode if you don't need AI features")
+        output.detail(f"  5. Current provider: {config.llm_provider if 'config' in locals() else 'unknown'}")
+        output.detail("  6. Set LLM_PROVIDER environment variable to change provider (openai/anthropic/google/ollama)")
         raise
 
 
