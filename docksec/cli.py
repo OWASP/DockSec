@@ -73,6 +73,7 @@ def main() -> None:
     parser.add_argument('--offline', dest='offline', action='store_true', help='Run without network access: use the local Trivy DB (no DB update) and skip AI analysis')
     parser.add_argument('--baseline', dest='baseline', metavar='FILE', help='Path to a baseline file; with --fail-on, only findings not present in the baseline trigger the gate')
     parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose INFO-level logging for this run')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
@@ -93,6 +94,8 @@ def main() -> None:
         os.environ["LLM_PROVIDER"] = args.provider
     if args.model:
         os.environ["LLM_MODEL"] = args.model
+    if args.verbose and not os.getenv("DOCKSEC_LOG_LEVEL"):
+        os.environ["DOCKSEC_LOG_LEVEL"] = "INFO"
 
     # Set compact output mode if requested
     if args.compact_output:

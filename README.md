@@ -134,6 +134,9 @@ docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --fail-on
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
 
+# Enable INFO-level logs for this run
+docksec Dockerfile --scan-only --verbose
+
 # Disable colored output (also honors the NO_COLOR env var)
 docksec Dockerfile --no-color
 ```
@@ -141,6 +144,7 @@ docksec Dockerfile --no-color
 Every scan ends with a result summary: a severity table, the security score with a
 rating, a "Quick take" action block, the generated reports, and a suggested next
 command. Use `--quiet` for a compact result and `--no-color` for plain output.
+Use `--verbose` or `-v` to force INFO-level logs when needed.
 
 ### Machine-readable output
 

@@ -249,6 +249,57 @@ class TestCLI(unittest.TestCase):
                 main()
         self.assertNotEqual(ctx.exception.code, 2)
 
+    @patch('sys.argv', ['docksec', 'Dockerfile', '--scan-only', '-v'])
+    @patch('docksec.cli.DockerSecurityScanner', create=True)
+    def test_verbose_flag_sets_log_level(self, mock_scanner_class):
+        """`-v/--verbose` enables INFO logs when no override env var exists."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        scanner.run_full_scan.return_value = {
+            "json_data": [],
+            "scan_mode": "full",
+            "dockerfile_scan": {"skipped": False, "success": True},
+            "image_scan": {"skipped": True, "success": True},
+            "timestamp": "2026-01-01 00:00:00",
+            "dockerfile": "Dockerfile",
+        }
+        scanner.get_security_score.return_value = 88
+        scanner.generate_all_reports.return_value = {}
+        scanner.RESULTS_DIR = '/tmp'
+        mock_scanner_class.return_value = scanner
+
+        with patch('builtins.print'):
+            with patch.dict(os.environ, {}, clear=True):
+                main()
+                self.assertEqual(os.environ.get("DOCKSEC_LOG_LEVEL"), "INFO")
+
+
+    @patch('sys.argv', ['docksec', 'Dockerfile', '--scan-only', '-v'])
+    @patch('docksec.cli.DockerSecurityScanner', create=True)
+    def test_verbose_respects_existing_log_level(self, mock_scanner_class):
+        """`-v` should not override an explicit DOCKSEC_LOG_LEVEL from env."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        scanner.run_full_scan.return_value = {
+            "json_data": [],
+            "scan_mode": "full",
+            "dockerfile_scan": {"skipped": False, "success": True},
+            "image_scan": {"skipped": True, "success": True},
+            "timestamp": "2026-01-01 00:00:00",
+            "dockerfile": "Dockerfile",
+        }
+        scanner.get_security_score.return_value = 88
+        scanner.generate_all_reports.return_value = {}
+        scanner.RESULTS_DIR = '/tmp'
+        mock_scanner_class.return_value = scanner
+
+        with patch('builtins.print'):
+            with patch.dict(os.environ, {"DOCKSEC_LOG_LEVEL": "WARNING"}, clear=True):
+                main()
+                self.assertEqual(os.environ.get("DOCKSEC_LOG_LEVEL"), "WARNING")
+
 
 class TestCLIHelpers(unittest.TestCase):
     """Test cases for the CLI summary helper functions."""
