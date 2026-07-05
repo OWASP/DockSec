@@ -1,0 +1,31 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_TAG = "myapp:${env.BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Build image') {
+            steps {
+                sh 'docker build -t "$IMAGE_TAG" .'
+            }
+        }
+
+        stage('DockSec security scan') {
+            environment {
+                OPENAI_API_KEY = credentials('openai-api-key')
+            }
+            steps {
+                sh 'python3 -m pip install --user docksec'
+                sh '$HOME/.local/bin/docksec Dockerfile -i "$IMAGE_TAG" --fail-on high --format json,html,csv --output-dir results'
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'results/**', allowEmptyArchive: true
+        }
+    }
+}

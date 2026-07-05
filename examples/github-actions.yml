@@ -1,0 +1,51 @@
+name: DockSec Container Security Scan
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "Dockerfile*"
+      - ".github/workflows/docksec.yml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "Dockerfile*"
+
+jobs:
+  docksec-scan:
+    name: Docker security analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t myapp:${{ github.sha }} .
+
+      - name: Run DockSec
+        uses: OWASP/DockSec@main
+        with:
+          dockerfile: Dockerfile
+          image: myapp:${{ github.sha }}
+          output_dir: results
+          format: json,html,csv
+          sarif: "true"
+          fail_on: high
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docksec-security-report
+          path: results/
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results

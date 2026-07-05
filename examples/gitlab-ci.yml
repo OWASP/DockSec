@@ -1,0 +1,23 @@
+docksec-scan:
+  image: docker:27
+  stage: security
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+  before_script:
+    - apk add --no-cache py3-pip
+    - python3 -m pip install --break-system-packages docksec
+  script:
+    - docker build -t "$IMAGE_TAG" .
+    - docksec Dockerfile -i "$IMAGE_TAG" --fail-on high --format json,html,csv --output-dir gl-security-report
+  artifacts:
+    when: always
+    paths:
+      - gl-security-report/
+    expire_in: 1 week
+  rules:
+    - changes:
+        - Dockerfile*
+        - .gitlab-ci.yml
