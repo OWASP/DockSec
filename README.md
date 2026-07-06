@@ -136,6 +136,9 @@ docksec Dockerfile --scan-only --quiet
 
 # Disable colored output (also honors the NO_COLOR env var)
 docksec Dockerfile --no-color
+
+# Enable INFO logging for command output details
+docksec --verbose --image-only -i myapp:latest
 ```
 
 Every scan ends with a result summary: a severity table, the security score with a

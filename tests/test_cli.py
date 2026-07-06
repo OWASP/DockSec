@@ -27,7 +27,7 @@ class TestCLI(unittest.TestCase):
             shutil.rmtree(self.test_dir)
     
     @patch('sys.argv', ['docksec', 'Dockerfile', '-i', 'test:latest', '--compact-output'])
-    @patch('docksec.cli.DockerSecurityScanner', create=True)
+    @patch('docksec.docker_scanner.DockerSecurityScanner')
     def test_compact_output_flag(self, mock_scanner_class):
         """Test --compact-output flag is parsed correctly."""
         # Mock scanner instance
@@ -52,7 +52,7 @@ class TestCLI(unittest.TestCase):
                     pass
     
     @patch('sys.argv', ['docksec', '--image-only', '-i', 'test:latest', '--skip-ai-scoring'])
-    @patch('docksec.cli.DockerSecurityScanner', create=True)
+    @patch('docksec.docker_scanner.DockerSecurityScanner')
     def test_skip_ai_scoring_flag(self, mock_scanner_class):
         """Test --skip-ai-scoring flag is parsed correctly."""
         # Mock scanner instance
@@ -137,6 +137,56 @@ class TestCLI(unittest.TestCase):
             scanner.use_cache = os.getenv("DOCKSEC_USE_CACHE", "true").lower() == "true"
             
             self.assertFalse(scanner.use_cache)
+
+    @patch('docksec.docker_scanner.DockerSecurityScanner')
+    @patch('sys.argv', ['docksec', '--image-only', '--verbose', '-i', 'alpine:latest'])
+    def test_verbose_flag_sets_log_level(self, mock_scanner_class):
+        """`-v/--verbose` should set DOCKSEC_LOG_LEVEL to INFO when unset."""
+        mock_scanner = Mock()
+        mock_scanner_class.return_value = mock_scanner
+        mock_scanner.run_image_only_scan.return_value = {
+            'json_data': [],
+            'dockerfile_scan': {'skipped': True},
+            'image_scan': {'skipped': False},
+            'scan_mode': 'image_only',
+        }
+        mock_scanner.get_security_score.return_value = 90.0
+        mock_scanner.generate_all_reports.return_value = {}
+
+        with patch.dict(os.environ, {}, clear=True):
+            from docksec.cli import main
+
+            with patch('docksec.cli.output', create=True) as mock_output:
+                with patch('builtins.print'):
+                    mock_output.report_results.return_value = None
+                    main()
+
+            self.assertEqual(os.getenv("DOCKSEC_LOG_LEVEL"), "INFO")
+
+    @patch('docksec.docker_scanner.DockerSecurityScanner')
+    @patch('sys.argv', ['docksec', '--image-only', '--verbose', '-i', 'alpine:latest'])
+    def test_verbose_flag_does_not_override_existing_log_level(self, mock_scanner_class):
+        """Existing DOCKSEC_LOG_LEVEL should keep priority over `--verbose`."""
+        mock_scanner = Mock()
+        mock_scanner_class.return_value = mock_scanner
+        mock_scanner.run_image_only_scan.return_value = {
+            'json_data': [],
+            'dockerfile_scan': {'skipped': True},
+            'image_scan': {'skipped': False},
+            'scan_mode': 'image_only',
+        }
+        mock_scanner.get_security_score.return_value = 90.0
+        mock_scanner.generate_all_reports.return_value = {}
+
+        with patch.dict(os.environ, {'DOCKSEC_LOG_LEVEL': 'WARNING'}):
+            from docksec.cli import main
+
+            with patch('docksec.cli.output', create=True) as mock_output:
+                with patch('builtins.print'):
+                    mock_output.report_results.return_value = None
+                    main()
+
+            self.assertEqual(os.getenv("DOCKSEC_LOG_LEVEL"), "WARNING")
     
     @patch('sys.argv', ['docksec', 'Dockerfile', '-i', 'test:latest', '--provider', 'anthropic'])
     @patch('docksec.cli.DockerSecurityScanner', create=True)
