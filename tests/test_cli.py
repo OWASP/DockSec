@@ -292,6 +292,47 @@ class TestCLIHelpers(unittest.TestCase):
         lines = _quick_take_lines(results, counts, run_ai=False)
         self.assertTrue(any("--scan-only" in line for line in lines))
 
+    def test_quick_take_reports_failed_services(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {
+            "dockerfile_scan": {"skipped": True},
+            "failed_services": [
+                {"service": "web", "reason": "image not found locally: nginx:1.21.0"},
+                {"service": "db", "reason": "image not found locally: postgres:13"},
+            ],
+            "scanned_services": 3,
+        }
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        joined = " ".join(lines)
+        self.assertIn("2 of 3 service(s) could not be scanned: web, db", joined)
+        self.assertIn("score does not reflect", joined)
+
+    def test_render_scan_summary_warns_on_failed_services(self):
+        from docksec.cli import _render_scan_summary
+
+        output = Mock()
+        output.count_by_severity.return_value = {}
+        scanner = Mock(analysis_score=None, RESULTS_DIR="results")
+        results = {
+            "json_data": [],
+            "dockerfile_scan": {"skipped": True},
+            "failed_services": [
+                {"service": "db", "reason": "image not found locally: postgres:13"},
+            ],
+            "scanned_services": 2,
+        }
+
+        _render_scan_summary(output, Mock(), scanner, results, None,
+                             run_ai=True, run_compose_analysis=True)
+
+        warn_msg = output.warn.call_args[0][0]
+        self.assertIn("1 of 2 service(s) could not be scanned: db", warn_msg)
+        detail_msgs = [call[0][0] for call in output.detail.call_args_list]
+        self.assertTrue(any("db: image not found locally: postgres:13" in msg
+                            for msg in detail_msgs))
+
     def test_suggest_next_command_recommends_image_scan(self):
         from docksec.cli import _suggest_next_command
 

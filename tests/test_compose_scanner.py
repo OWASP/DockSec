@@ -1,5 +1,5 @@
 import pytest
-from docksec.compose_scanner import ComposeScanner, ComposeOrchestrator
+from docksec.compose_scanner import ComposeScanner, ComposeOrchestrator, _failure_reason
 
 @pytest.fixture
 def valid_compose_file(tmp_path):
@@ -165,6 +165,52 @@ def test_compose_orchestrator_reports_failed_services(valid_compose_file, mocker
     assert failure['service'] == 'db'
     assert 'postgres:13' in failure['reason']
     # The aggregate success flag still reflects the failure (scoring unchanged)
+    assert results['image_scan']['success'] is False
+
+def test_failure_reason_truncates_long_first_line():
+    long_line = "x" * 200
+    reason = _failure_reason(long_line + "\nsecond line", "fallback")
+    assert reason == "x" * 117 + "..."
+    assert len(reason) == 120
+
+def test_failure_reason_falls_back_when_output_missing():
+    assert _failure_reason(None, "image scan failed for nginx:1.21.0") == \
+        "image scan failed for nginx:1.21.0"
+    assert _failure_reason("   \n  ", "fallback") == "fallback"
+
+@pytest.fixture
+def build_and_image_compose_file(tmp_path):
+    (tmp_path / "Dockerfile").write_text("FROM nginx:1.21.0\nUSER 1000\n")
+    compose_content = """
+version: '3'
+services:
+  app:
+    build: .
+    image: myapp:1.0
+"""
+    p = tmp_path / "docker-compose.yml"
+    p.write_text(compose_content)
+    return str(p)
+
+def test_compose_orchestrator_full_scan_reports_failed_image(build_and_image_compose_file, mocker):
+    # Service has both a Dockerfile and an image: the full-scan path runs.
+    # Hadolint passes but the image scan fails without output, so the
+    # fallback reason is used.
+    mock_scanner = mocker.patch('docksec.compose_scanner.DockerSecurityScanner')
+    mock_instance = mock_scanner.return_value
+    mock_instance.run_full_scan.return_value = {
+        'dockerfile_scan': {'success': True, 'output': 'lint ok', 'skipped': False},
+        'image_scan': {'success': False, 'output': None, 'skipped': False},
+        'json_data': [],
+    }
+
+    orchestrator = ComposeOrchestrator(build_and_image_compose_file)
+    results = orchestrator.run_full_scan()
+
+    assert results['scanned_services'] == 1
+    assert results['failed_services'] == [
+        {'service': 'app', 'reason': 'image scan failed for myapp:1.0'}
+    ]
     assert results['image_scan']['success'] is False
 
 def test_compose_orchestrator_reports_service_exception(valid_compose_file, mocker):
