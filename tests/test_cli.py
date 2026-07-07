@@ -249,6 +249,50 @@ class TestCLI(unittest.TestCase):
                 main()
         self.assertNotEqual(ctx.exception.code, 2)
 
+    @patch("sys.argv", ["docksec", "--image-only", "-i", "test:latest", "--verbose"])
+    @patch("docksec.docker_scanner.DockerSecurityScanner")
+    def test_verbose_flag_sets_info_log_level(self, mock_scanner_class):
+        """--verbose is a shortcut for DOCKSEC_LOG_LEVEL=INFO."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        mock_scanner_class.return_value = scanner
+        scanner.run_image_only_scan.return_value = {
+            "json_data": [],
+            "dockerfile_scan": {"skipped": True},
+            "image_scan": {"skipped": False},
+            "scan_mode": "image_only",
+        }
+        scanner.get_security_score.return_value = 90.0
+        scanner.generate_all_reports.return_value = {}
+        scanner.RESULTS_DIR = "/tmp"
+
+        with patch.dict(os.environ, {}, clear=True):
+            main()
+            self.assertEqual(os.environ["DOCKSEC_LOG_LEVEL"], "INFO")
+
+    @patch("sys.argv", ["docksec", "--image-only", "-i", "test:latest", "-v"])
+    @patch("docksec.docker_scanner.DockerSecurityScanner")
+    def test_verbose_flag_preserves_explicit_log_level(self, mock_scanner_class):
+        """An existing DOCKSEC_LOG_LEVEL takes priority over -v."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        mock_scanner_class.return_value = scanner
+        scanner.run_image_only_scan.return_value = {
+            "json_data": [],
+            "dockerfile_scan": {"skipped": True},
+            "image_scan": {"skipped": False},
+            "scan_mode": "image_only",
+        }
+        scanner.get_security_score.return_value = 90.0
+        scanner.generate_all_reports.return_value = {}
+        scanner.RESULTS_DIR = "/tmp"
+
+        with patch.dict(os.environ, {"DOCKSEC_LOG_LEVEL": "DEBUG"}, clear=True):
+            main()
+            self.assertEqual(os.environ["DOCKSEC_LOG_LEVEL"], "DEBUG")
+
 
 class TestCLIHelpers(unittest.TestCase):
     """Test cases for the CLI summary helper functions."""
