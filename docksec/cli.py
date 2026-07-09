@@ -74,6 +74,7 @@ def main() -> None:
     parser.add_argument('--baseline', dest='baseline', metavar='FILE', help='Path to a baseline file; with --fail-on, only findings not present in the baseline trigger the gate')
     parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Show INFO-level log lines on stderr')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
 
@@ -97,6 +98,9 @@ def main() -> None:
     # Set compact output mode if requested
     if args.compact_output:
         os.environ["DOCKSEC_COMPACT_OUTPUT"] = "true"
+
+    if args.verbose and not os.getenv("DOCKSEC_LOG_LEVEL"):
+        os.environ["DOCKSEC_LOG_LEVEL"] = "INFO"
 
     # Resolve the severity filter: CLI flag > DOCKSEC_DEFAULT_SEVERITY env > default.
     from docksec.config_manager import get_config
