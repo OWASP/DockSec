@@ -85,7 +85,71 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(len(stream_handlers), 1)
         self.assertIs(stream_handlers[0].stream, sys.stderr)
         self.assertFalse(logger.propagate)
-    
+
+    def test_get_custom_logger_duplicates_to_log_file(self):
+        """DOCKSEC_LOG_FILE (set by --log-file) mirrors log lines into the file
+        while the stderr handler keeps emitting them."""
+        import sys
+        import logging
+        from docksec.utils import get_custom_logger
+
+        old_env = {key: os.environ.get(key) for key in
+                   ("DOCKSEC_LOG_FILE", "DOCKSEC_LOG_LEVEL", "DOCKSEC_CLI_MODE")}
+        logger = None
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                log_path = os.path.join(tmp_dir, 'docksec.log')
+                os.environ["DOCKSEC_LOG_FILE"] = log_path
+                os.environ["DOCKSEC_LOG_LEVEL"] = "INFO"
+                os.environ.pop("DOCKSEC_CLI_MODE", None)
+
+                logger = get_custom_logger('TestLoggerLogFile')
+                logger.info("this line lands in the log file")
+
+                file_handlers = [h for h in logger.handlers
+                                 if isinstance(h, logging.FileHandler)]
+                self.assertEqual(len(file_handlers), 1)
+                with open(log_path, encoding='utf-8') as handle:
+                    self.assertIn("this line lands in the log file", handle.read())
+
+                # The stderr handler survives alongside the file handler.
+                stream_handlers = [h for h in logger.handlers
+                                   if isinstance(h, logging.StreamHandler)
+                                   and not isinstance(h, logging.FileHandler)]
+                self.assertEqual(len(stream_handlers), 1)
+                self.assertIs(stream_handlers[0].stream, sys.stderr)
+
+                # Release the file handle so the temp dir can be removed.
+                for handler in list(logger.handlers):
+                    handler.close()
+                    logger.removeHandler(handler)
+                logger = None
+        finally:
+            if logger is not None:
+                for handler in list(logger.handlers):
+                    handler.close()
+                    logger.removeHandler(handler)
+            for key, val in old_env.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val
+
+    def test_get_custom_logger_without_log_file_adds_no_file_handler(self):
+        """Without DOCKSEC_LOG_FILE the logger stays stderr-only, as before."""
+        import logging
+        from docksec.utils import get_custom_logger
+
+        old_log_file = os.environ.pop("DOCKSEC_LOG_FILE", None)
+        try:
+            logger = get_custom_logger('TestLoggerNoLogFile')
+            file_handlers = [h for h in logger.handlers
+                             if isinstance(h, logging.FileHandler)]
+            self.assertEqual(file_handlers, [])
+        finally:
+            if old_log_file is not None:
+                os.environ["DOCKSEC_LOG_FILE"] = old_log_file
+
     def test_load_docker_file(self):
         """Test Dockerfile loading."""
         from docksec.utils import load_docker_file

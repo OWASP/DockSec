@@ -137,6 +137,9 @@ docksec Dockerfile --scan-only --quiet
 # Show INFO-level diagnostic logs on stderr for troubleshooting
 docksec Dockerfile --scan-only --verbose
 
+# Also append those logs to a file for CI to collect as an artifact
+docksec Dockerfile --scan-only --verbose --log-file logs/docksec.log
+
 # Disable colored output (also honors the NO_COLOR env var)
 docksec Dockerfile --no-color
 ```
@@ -144,7 +147,8 @@ docksec Dockerfile --no-color
 Every scan ends with a result summary: a severity table, the security score with a
 rating, a "Quick take" action block, the generated reports, and a suggested next
 command. Use `--quiet` for a compact result, `--verbose` for INFO-level
-diagnostic logs, and `--no-color` for plain output.
+diagnostic logs, `--log-file FILE` to also append those logs to a file, and
+`--no-color` for plain output.
 
 ### Machine-readable output
 

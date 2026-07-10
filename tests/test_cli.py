@@ -293,6 +293,68 @@ class TestCLI(unittest.TestCase):
             main()
             self.assertEqual(os.environ["DOCKSEC_LOG_LEVEL"], "DEBUG")
 
+    @staticmethod
+    def _close_file_handlers():
+        """Drop any FileHandler a run left open, so tearDown can remove the dir."""
+        import logging
+
+        loggers = [logging.getLogger()] + [
+            logging.getLogger(name) for name in logging.root.manager.loggerDict
+        ]
+        for log in loggers:
+            for handler in list(getattr(log, 'handlers', [])):
+                if isinstance(handler, logging.FileHandler):
+                    handler.close()
+                    log.removeHandler(handler)
+
+    @patch("docksec.docker_scanner.DockerSecurityScanner")
+    def test_log_file_flag_creates_file_and_parent_dirs(self, mock_scanner_class):
+        """--log-file exports DOCKSEC_LOG_FILE and creates missing parents."""
+        from docksec.cli import main
+
+        scanner = Mock()
+        mock_scanner_class.return_value = scanner
+        scanner.run_image_only_scan.return_value = {
+            "json_data": [],
+            "dockerfile_scan": {"skipped": True},
+            "image_scan": {"skipped": False},
+            "scan_mode": "image_only",
+        }
+        scanner.get_security_score.return_value = 90.0
+        scanner.generate_all_reports.return_value = {}
+        scanner.RESULTS_DIR = "/tmp"
+
+        log_path = os.path.join(self.test_dir, "nested", "dir", "docksec.log")
+        argv = ["docksec", "--image-only", "-i", "test:latest", "--log-file", log_path]
+        try:
+            with patch.object(sys, "argv", argv):
+                with patch.dict(os.environ, {}, clear=True):
+                    main()
+                    self.assertEqual(os.environ["DOCKSEC_LOG_FILE"], log_path)
+            self.assertTrue(os.path.isfile(log_path))
+        finally:
+            self._close_file_handlers()
+
+    def test_log_file_flag_errors_on_unwritable_path(self):
+        """An unwritable --log-file path exits 2 instead of raising."""
+        from docksec.cli import main
+
+        blocker = os.path.join(self.test_dir, "blocker")
+        with open(blocker, 'w') as handle:
+            handle.write("not a directory")
+        log_path = os.path.join(blocker, "docksec.log")
+
+        argv = ["docksec", "--image-only", "-i", "test:latest", "--log-file", log_path]
+        try:
+            with patch.object(sys, "argv", argv):
+                with patch.dict(os.environ, {}, clear=True):
+                    with self.assertRaises(SystemExit) as ctx:
+                        main()
+            self.assertEqual(ctx.exception.code, 2)
+            self.assertNotIn("DOCKSEC_LOG_FILE", os.environ)
+        finally:
+            self._close_file_handlers()
+
 
 class TestCLIHelpers(unittest.TestCase):
     """Test cases for the CLI summary helper functions."""

@@ -87,6 +87,15 @@ def get_custom_logger(name: str = 'Docksec', user_facing: bool = False):
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+    # DOCKSEC_LOG_FILE (set by --log-file) duplicates log output to a file so a
+    # CI run can collect it as an artifact. Handlers append: every module builds
+    # its own logger, so several FileHandlers share one path and truncating here
+    # would let them clobber each other.
+    log_file = os.getenv("DOCKSEC_LOG_FILE")
+    if log_file and not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     for handler in logger.handlers:
         handler.setLevel(log_level)
     # Don't propagate to the root logger; prevents duplicate emission.
