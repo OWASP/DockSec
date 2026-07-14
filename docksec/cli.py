@@ -75,6 +75,7 @@ def main() -> None:
     parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('-v', '--verbose', action='store_true', help='Show INFO-level log lines on stderr')
+    parser.add_argument('--log-file', dest='log_file', metavar='FILE', help='Also append log lines to FILE, creating missing parent directories; combine with --verbose to capture INFO-level logs')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
 
@@ -101,6 +102,20 @@ def main() -> None:
 
     if args.verbose and not os.getenv("DOCKSEC_LOG_LEVEL"):
         os.environ["DOCKSEC_LOG_LEVEL"] = "INFO"
+
+    # Resolve --log-file before any logger is built, so get_custom_logger can
+    # attach its file handler. Opening the path here surfaces an unwritable
+    # destination as a clean CLI error instead of a traceback mid-scan.
+    if args.log_file:
+        try:
+            parent = os.path.dirname(os.path.abspath(args.log_file))
+            os.makedirs(parent, exist_ok=True)
+            with open(args.log_file, 'a', encoding='utf-8'):
+                pass
+        except OSError as exc:
+            output.error(f"Cannot write to --log-file '{args.log_file}': {exc}")
+            sys.exit(2)
+        os.environ["DOCKSEC_LOG_FILE"] = args.log_file
 
     # Resolve the severity filter: CLI flag > DOCKSEC_DEFAULT_SEVERITY env > default.
     from docksec.config_manager import get_config
