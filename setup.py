@@ -41,6 +41,17 @@ setup(
         "setuptools>=65.0.0",
         "ruamel.yaml>=0.18.6",
     ],
+    extras_require={
+        "dev": [
+            "pytest",
+            "pytest-cov",
+            "pytest-mock",
+            "black",
+            "isort",
+            "flake8",
+            "mypy",
+        ],
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
