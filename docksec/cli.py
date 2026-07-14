@@ -61,6 +61,7 @@ def main() -> None:
     parser.add_argument('--provider', choices=LLMProvider.values(),
                        help='LLM provider to use (default: openai, can also set LLM_PROVIDER env var)')
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-haiku-4-5, gemini-1.5-pro, llama3.1)')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable INFO-level logs by setting DOCKSEC_LOG_LEVEL=INFO')
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
     parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
     parser.add_argument('--severity', help='Comma-separated severity levels to scan for (default: CRITICAL,HIGH; or set DOCKSEC_DEFAULT_SEVERITY)')
@@ -84,6 +85,11 @@ def main() -> None:
     # Configure the terminal output layer before anything is printed.
     from docksec import output
     no_color = args.no_color or bool(os.getenv("NO_COLOR"))
+
+    # --verbose raises verbosity to INFO, but only when not already explicitly set.
+    if args.verbose:
+        os.environ.setdefault("DOCKSEC_LOG_LEVEL", "INFO")
+
     if no_color:
         # Every Rich console (including the AI-findings console in utils) honors
         # NO_COLOR, so set it before those modules are imported.
