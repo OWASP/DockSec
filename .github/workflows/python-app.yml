@@ -1,102 +1,102 @@
-  name: Python Application CI
+name: Python Application CI
 
-  on:
-    push:
-      branches: [ main ]
-    pull_request:
-      branches: [ main ]
-    workflow_dispatch:
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
-  permissions:
-    contents: read
+permissions:
+  contents: read
 
-  jobs:
-    build-and-test:
-      runs-on: ubuntu-latest
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
 
-      strategy:
-        matrix:
-          python-version: ['3.12', '3.13']
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
 
-      steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+    steps:
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: ${{ matrix.python-version }}
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      with:
+        python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Build and install package
-        run: |
-          pip install build
-          python -m build
-          pip install -e .
+    - name: Build and install package
+      run: |
+        pip install build
+        python -m build
+        pip install -e .
 
-      - name: Setup Hadolint
-        run: |
-          curl -sL -o hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
-          chmod +x hadolint
-          sudo mv hadolint /usr/local/bin/
+    - name: Setup Hadolint
+      run: |
+        curl -sL -o hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+        chmod +x hadolint
+        sudo mv hadolint /usr/local/bin/
 
-      - name: Setup Trivy
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update -qq
-          sudo apt-get install -y trivy
+    - name: Setup Trivy
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update -qq
+        sudo apt-get install -y trivy
 
-      - name: Run unit tests
-        run: |
-          pip install -e ".[dev]"
-          pytest tests/ -v
+    - name: Run unit tests
+      run: |
+        pip install -e ".[dev]"
+        pytest tests/ -v
 
-      - name: Lint Python code with ruff
-        run: |
-          pip install ruff
-          ruff check .
+    - name: Lint Python code with ruff
+      run: |
+        pip install ruff
+        ruff check .
 
-      - name: Lint Dockerfiles with Hadolint
-        run: |
-          find . -name "Dockerfile*" -exec hadolint {} \;
+    - name: Lint Dockerfiles with Hadolint
+      run: |
+        find . -name "Dockerfile*" -exec hadolint {} \;
 
-      - name: Scan Dockerfiles with Trivy
-        run: |
-          find . -name "Dockerfile*" -exec trivy config {} \;
+    - name: Scan Dockerfiles with Trivy
+      run: |
+        find . -name "Dockerfile*" -exec trivy config {} \;
 
-      - name: Verify CLI installs correctly
-        run: |
-          docksec --version
-          docksec --help
+    - name: Verify CLI installs correctly
+      run: |
+        docksec --version
+        docksec --help
 
-      - name: Run scan-only mode (no AI required)
-        run: |
-          mkdir -p test_dir
-          cat > test_dir/Dockerfile << 'EOF'
-          FROM alpine:latest
-          RUN apk add --no-cache curl
-          WORKDIR /app
-          COPY . .
-          CMD ["sh"]
-          EOF
-          docker pull alpine:latest
-          docksec test_dir/Dockerfile --scan-only -i alpine:latest
-          rm -rf test_dir
+    - name: Run scan-only mode (no AI required)
+      run: |
+        mkdir -p test_dir
+        cat > test_dir/Dockerfile << 'EOF'
+        FROM alpine:latest
+        RUN apk add --no-cache curl
+        WORKDIR /app
+        COPY . .
+        CMD ["sh"]
+        EOF
+        docker pull alpine:latest
+        docksec test_dir/Dockerfile --scan-only -i alpine:latest
+        rm -rf test_dir
 
-      - name: Run image-only scan
-        run: |
-          docksec --image-only -i alpine:latest
+    - name: Run image-only scan
+      run: |
+        docksec --image-only -i alpine:latest
 
-      - name: Upload scan results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: scan-results
-          path: results/
-          if-no-files-found: ignore
+    - name: Upload scan results
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      if: always()
+      with:
+        name: scan-results
+        path: results/
+        if-no-files-found: ignore
