@@ -75,7 +75,7 @@ Integrate DockSec into your GitHub Actions workflow:
 
 ```yaml
 - name: Run DockSec AI Scanner
-  uses: OWASP/DockSec@main
+  uses: OWASP/DockSec@v2026.7.4
   with:
     dockerfile: 'Dockerfile'
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -84,7 +84,10 @@ Integrate DockSec into your GitHub Actions workflow:
 ### CLI Usage
 
 ```bash
-# Install DockSec
+# Install DockSec with AI analysis support
+pip install "docksec[ai]"
+
+# Or install the slim, scan-only core (no LLM dependencies)
 pip install docksec
 
 # Scan a Dockerfile (AI-powered)
@@ -130,6 +133,15 @@ docksec install-skill
 # Save today's findings as a baseline, then only gate on new findings later
 docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --update-baseline
 docksec -i myapp:latest --image-only --baseline .docksec-baseline.json --fail-on high
+
+# Suppress triaged findings with an auditable ignore file
+docksec -i myapp:latest --image-only --ignore-file .docksec-ignore.yml
+
+# Force a fresh scan, bypassing the results cache
+docksec -i myapp:latest --image-only --no-cache
+
+# Send file content to the AI provider unmasked (secrets are redacted by default)
+docksec Dockerfile --no-redact
 
 # Reduce output to warnings, errors, and the result summary
 docksec Dockerfile --scan-only --quiet
@@ -185,7 +197,7 @@ directly on pull requests and in the Security tab:
 
 ```yaml
 - name: Run DockSec
-  uses: OWASP/DockSec@main
+  uses: OWASP/DockSec@v2026.7.4
   with:
     dockerfile: 'Dockerfile'
     sarif: 'true'
@@ -274,6 +286,53 @@ valid as unrelated findings come and go. Re-run with `--update-baseline` wheneve
 to accept the current state as the new baseline (e.g. after triaging and deciding to defer
 a finding).
 
+### Ignoring findings (waivers)
+
+`--ignore-file FILE` suppresses individual findings a team has triaged and accepted.
+Unlike the baseline (a point-in-time snapshot), the ignore file is an explicit,
+reviewable list where every entry carries a reason and an optional expiry date.
+If a `.docksec-ignore.yml` file exists in the current directory, it is picked up
+automatically.
+
+```yaml
+# .docksec-ignore.yml
+ignores:
+  - id: CVE-2023-45853              # Trivy vulnerability ID or DockSec rule ID
+    reason: "zlib CVE; code path not reachable, vendor fix pending"
+    expires: 2026-12-31              # optional; entry stops applying after this date
+  - id: compose-missing-healthcheck
+    reason: "healthchecks are handled by the orchestrator"
+```
+
+Suppressed findings are removed before scoring, reports, `--json` output, and the
+`--fail-on` gate. Expired entries stop applying automatically (with a warning), and
+entries without a reason are flagged so waivers stay auditable. Commit the file to
+version control so suppressions are reviewed like any other change.
+
+### Data flow and privacy
+
+DockSec is designed so you always know what leaves your machine:
+
+- **Scanning is fully local.** Trivy, Hadolint, and the security score run on your
+  machine. Image contents are never uploaded anywhere by DockSec.
+- **AI analysis sends only the scanned file.** When the AI pass runs, the Dockerfile
+  or compose file content (plus a short summary of vulnerability counts for scoring)
+  is sent to the LLM provider you configured. Nothing else is transmitted.
+- **Secrets are redacted before they leave.** Secret-looking values (passwords,
+  tokens, API keys, private key blocks) in the file are masked before the content is
+  sent to the AI provider. Key names stay visible so exposed credentials are still
+  flagged. Use `--no-redact` to opt out.
+- **Fully local AI is supported.** Use `--provider ollama` to keep the AI analysis on
+  your own hardware, or `--scan-only` / `--offline` to skip AI entirely.
+- **No telemetry.** DockSec collects no usage data and phones home to nothing.
+
+### Scan results cache
+
+Image scan results are cached (default: 24 hours, override with
+`DOCKSEC_CACHE_TTL_HOURS`) and keyed by the image's content digest, so a rebuilt tag
+such as a reused `:latest` always gets a fresh scan. Use `--no-cache` (or
+`DOCKSEC_USE_CACHE=false`) to bypass the cache for a run.
+
 ### Exit codes
 
 DockSec uses CI-friendly exit codes so builds and shells can react to results:
@@ -302,6 +361,8 @@ severity is widened automatically so the gate can observe those findings.
 - **Rich Formats**: Professional exports in HTML (interactive), PDF, JSON, CSV, SARIF, and CycloneDX SBOM.
 - **Supply-Chain Ready**: Generate a CycloneDX SBOM (`--sbom`) of any image for Dependency-Track and other consumers.
 - **Offline Mode**: Scan fully air-gapped (`--offline`) using the local Trivy database, no network required.
+- **Privacy First**: Secret values are redacted before any content reaches an AI provider, scanning is fully local, and there is no telemetry.
+- **Auditable Waivers**: Suppress triaged findings with an ignore file that records a reason and expiry date per entry.
 - **CI/CD Ready**: Designed for easy integration into GitHub Actions and build pipelines.
 - **AI-Assistant Skills**: `docksec install-skill` teaches Claude Code, Cursor, Copilot, and others how to run DockSec in your repo.
 - **GitHub Action**: Available on the GitHub Marketplace for automated security scans.

@@ -2,7 +2,6 @@ from dotenv import load_dotenv
 import os
 from typing import Optional, Dict, List, Any
 from collections import defaultdict
-from langchain_core.prompts import PromptTemplate
 
 
 load_dotenv()
@@ -92,7 +91,7 @@ html_template = get_html_template()
 
 
 # Helper functions for token optimization
-def truncate_dockerfile(content: str, max_lines: int = 50, max_chars: int = 2000) -> str:
+def truncate_dockerfile(content: str, max_lines: int = 400, max_chars: int = 16000) -> str:
     """
     Truncate Dockerfile to reduce token usage for LLM analysis.
     Keeps first N lines and limits total characters.
@@ -164,11 +163,6 @@ Dockerfile:
 {filecontent}
 """
 
-docker_agent_prompt = PromptTemplate(
-    input_variables=["filecontent"],
-    template=docker_agent_template
-)
-
 docker_score_template = """
 Score Docker security 1-100. Output ONLY JSON: {{"score": N}}
 90-100: Excellent, 70-89: Good, 50-69: Fair, 0-49: Poor.
@@ -176,7 +170,29 @@ Summary:
 {results}
 """
 
-docker_score_prompt = PromptTemplate(
-    input_variables=["results"],
-    template=docker_score_template
-)
+
+def _build_prompt(template: str, input_variables: List[str]):
+    """Build a LangChain PromptTemplate on demand.
+
+    langchain-core is part of the optional [ai] extra, so the import lives
+    here rather than at module level: the core (scan-only) install imports
+    docksec.config for RESULTS_DIR and helpers without pulling in LangChain.
+    """
+    try:
+        from langchain_core.prompts import PromptTemplate
+    except ImportError:
+        raise ImportError(
+            "AI analysis requested but the AI dependencies are not installed. "
+            "Install them with: pip install \"docksec[ai]\""
+        )
+    return PromptTemplate(input_variables=input_variables, template=template)
+
+
+def __getattr__(name: str):
+    # PEP 562 lazy attributes: prompts are only materialized (and LangChain
+    # only imported) when an AI code path actually asks for them.
+    if name == "docker_agent_prompt":
+        return _build_prompt(docker_agent_template, ["filecontent"])
+    if name == "docker_score_prompt":
+        return _build_prompt(docker_score_template, ["results"])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

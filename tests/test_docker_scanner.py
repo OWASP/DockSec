@@ -261,6 +261,46 @@ class TestDockerSecurityScanner(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir)
     
+    def test_scan_results_cache_extra_identity(self):
+        """Different extra identity (e.g. Dockerfile hash) means a cache miss."""
+        from docksec.docker_scanner import ScanResultsCache
+        import tempfile
+        import shutil
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cache = ScanResultsCache(temp_dir)
+            cache.set("sha256:abc", {"image": "test"}, extra="dockerfile-hash-1")
+
+            self.assertIsNotNone(cache.get("sha256:abc", extra="dockerfile-hash-1"))
+            self.assertIsNone(cache.get("sha256:abc", extra="dockerfile-hash-2"))
+            self.assertIsNone(cache.get("sha256:abc"))
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_scan_results_cache_ttl_expiry(self):
+        """Entries older than the TTL are treated as a miss and evicted."""
+        from docksec.docker_scanner import ScanResultsCache
+        from datetime import datetime, timedelta
+        import tempfile
+        import shutil
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cache = ScanResultsCache(temp_dir)
+            cache.set("sha256:abc", {"image": "test"})
+
+            # Age the entry beyond the TTL
+            key = cache.get_key("sha256:abc")
+            old = datetime.now() - timedelta(hours=cache.ttl_hours + 1)
+            cache.cache[key]["timestamp"] = old.isoformat()
+            cache._save_cache()
+
+            self.assertIsNone(cache.get("sha256:abc"))
+            self.assertNotIn(key, cache.cache)
+        finally:
+            shutil.rmtree(temp_dir)
+
     def test_scan_results_cache_persistence(self):
         """Test ScanResultsCache persistence to disk."""
         from docksec.docker_scanner import ScanResultsCache
