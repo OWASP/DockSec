@@ -242,7 +242,7 @@ class DockerSecurityScanner:
                     title = title[:57] + "..."
                 ui.detail(f"    - [{vuln.get('Severity')}] {vuln.get('VulnerabilityID', 'N/A')}: {title}")
     
-    def __init__(self, dockerfile_path: Optional[str], image_name: Optional[str], results_dir: str = RESULTS_DIR, scan_only: bool = False, skip_ai_scoring: bool = False, offline: bool = False):
+    def __init__(self, dockerfile_path: Optional[str], image_name: Optional[str], results_dir: str = RESULTS_DIR, scan_only: bool = False, skip_ai_scoring: bool = False, offline: bool = False, scanner: str = "trivy"):
         """
         Initialize the Docker Security Scanner with a Dockerfile path and/or image name.
         Verifies that required tools are installed and the specified files exist.
@@ -265,6 +265,12 @@ class DockerSecurityScanner:
         else:
             self.dockerfile_path = None
         
+        # Validate scanner choice
+        valid_scanners = ("trivy", "grype", "all")
+        if scanner not in valid_scanners:
+            raise ValueError(f"Invalid scanner: '{scanner}'. Valid options: {valid_scanners}")
+        self.scanner = scanner
+
         self.required_tools = ['trivy']
         if self.image_name:
             self.required_tools.append('docker')
@@ -323,6 +329,26 @@ class DockerSecurityScanner:
                 error_msg += f"\n{tool.upper()}:\n{self._get_tool_installation_instructions(tool)}\n"
             raise ValueError(error_msg)
         
+        # Check optional Grype availability (does not raise — Grype is optional)
+        if self.scanner in ("grype", "all"):
+            try:
+                subprocess.run(
+                    ['grype', 'version'],
+                    capture_output=True, check=True, timeout=10, shell=False,
+                )
+                self._grype_available = True
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                self._grype_available = False
+                if self.scanner == "grype":
+                    ui.warn("Grype not found. Falling back to Trivy.")
+                    ui.detail("Tip: install Grype via docksec-setup or https://github.com/anchore/grype")
+                    self.scanner = "trivy"
+                else:
+                    ui.warn("Grype not found. Using Trivy only for --scanner all.")
+                    ui.detail("Tip: install Grype via docksec-setup or https://github.com/anchore/grype")
+        else:
+            self._grype_available = False
+
         # Verify Dockerfile exists (after validation)
         if self.dockerfile_path and not os.path.exists(self.dockerfile_path):
             raise ValueError(f"Dockerfile not found at {self.dockerfile_path}")
@@ -436,15 +462,32 @@ class DockerSecurityScanner:
             'scan_mode': 'image_only'
         }
 
-        # Run image vulnerability scan
-        image_success, image_output = self.scan_image(severity)
-        results['image_scan']['success'] = image_success
-        results['image_scan']['output'] = image_output
+        # Run vulnerability scan(s) based on scanner mode
+        scanner_mode = self.scanner
+        trivy_data: List[Dict] = []
+        grype_data: List[Dict] = []
 
-        # Get JSON data for vulnerabilities
-        json_success, json_data = self.scan_image_json(severity)
-        if json_success:
-            results['json_data'] = json_data
+        if scanner_mode in ("trivy", "all"):
+            image_success, image_output = self.scan_image(severity)
+            results['image_scan']['success'] = image_success
+            results['image_scan']['output'] = image_output
+            trivy_success, trivy_data = self.scan_image_json(severity)
+            trivy_data = trivy_data or []
+
+        if scanner_mode in ("grype", "all") and self._grype_available:
+            grype_success, grype_data = self.scan_image_grype(severity)
+            grype_data = grype_data or []
+            if scanner_mode == "grype":
+                results['image_scan']['success'] = grype_success
+
+        if scanner_mode == "trivy":
+            results['json_data'] = trivy_data
+        elif scanner_mode == "grype":
+            results['json_data'] = grype_data
+        else:  # "all"
+            results['json_data'] = self._deduplicate_vulnerabilities(trivy_data, grype_data)
+
+        json_data = results['json_data']
 
         # Cache results
         if self.use_cache:
@@ -458,9 +501,8 @@ class DockerSecurityScanner:
             for v in json_data:
                 severity_counts[v.get('Severity', Severity.UNKNOWN)] += 1
             ui.info(f"Image scan completed for {self.image_name}. Found {len(json_data)} vulnerabilities.")
-            # self._print_compact_vulnerability_summary(json_data) is already called in scan_image_json
 
-        return results 
+        return results
           
     def _check_tools(self) -> List[str]:
         """Check if all required tools are installed and return list of missing tools."""
@@ -501,9 +543,172 @@ class DockerSecurityScanner:
                 "  - macOS: brew install hadolint\n"
                 "  - Windows: See https://github.com/hadolint/hadolint#install\n"
                 "  - Or run: python setup_external_tools.py"
+            ),
+            'grype': (
+                "Grype is an optional vulnerability scanner (complements Trivy). Install it:\n"
+                "  - Linux/Mac: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin\n"
+                "  - macOS: brew install anchore/grype/grype\n"
+                "  - Windows: See https://github.com/anchore/grype#installation\n"
+                "  - Or run: docksec-setup"
             )
         }
         return instructions.get(tool, f"Please install {tool} from its official documentation.")
+
+    def _parse_grype_output(self, json_output: str, severity_filter: Optional[set] = None) -> List[Dict]:
+        """
+        Normalize Grype JSON output to DockSec's internal vulnerability format.
+
+        Args:
+            json_output: Raw JSON string from Grype
+            severity_filter: Set of uppercase severity levels to include.
+                             If None, all severities are included.
+
+        Returns:
+            List of vulnerability dicts in the same schema as Trivy results
+        """
+        data = json.loads(json_output)
+        matches = data.get("matches", [])
+        filtered_vulnerabilities = []
+
+        for match in matches:
+            vuln = match.get("vulnerability", {})
+            artifact = match.get("artifact", {})
+
+            severity = (vuln.get("severity") or "Unknown").upper()
+            if severity_filter and severity not in severity_filter:
+                continue
+
+            raw_desc = vuln.get("description", "")
+            if raw_desc:
+                first_sentence = raw_desc.split(".")[0].strip()
+                title = first_sentence[:100] + ("..." if len(first_sentence) > 100 else "")
+            else:
+                title = vuln.get("id", "")
+
+            description = raw_desc[:150] + "..." if len(raw_desc) > 150 else raw_desc
+
+            cvss_score = None
+            for cvss_entry in vuln.get("cvss", []):
+                version = cvss_entry.get("version", "")
+                if version.startswith("3"):
+                    cvss_score = cvss_entry.get("metrics", {}).get("baseScore")
+                    break
+
+            urls = vuln.get("urls", [])
+            primary_url = urls[0] if urls else None
+
+            fix_state = vuln.get("fix", {}).get("state", "")
+            status = "fixed" if fix_state == "fixed" else "affected"
+
+            locations = artifact.get("locations", [])
+            target = locations[0].get("path", "") if locations else artifact.get("type", "")
+
+            filtered_vulnerabilities.append({
+                "VulnerabilityID": vuln.get("id"),
+                "Target": target,
+                "PkgName": artifact.get("name", ""),
+                "InstalledVersion": artifact.get("version", ""),
+                "Severity": severity,
+                "Title": title,
+                "Description": description,
+                "Status": status,
+                "CVSS": cvss_score,
+                "PrimaryURL": primary_url,
+                "sources": ["grype"],
+            })
+
+        return filtered_vulnerabilities
+
+    def _deduplicate_vulnerabilities(self, trivy_vulns: List[Dict], grype_vulns: List[Dict]) -> List[Dict]:
+        """
+        Merge and deduplicate vulnerabilities from Trivy and Grype by CVE ID.
+
+        CVEs found by both scanners are merged into a single entry with
+        ``sources`` listing both tools.
+        """
+        seen: Dict[str, Dict] = {}
+
+        for v in trivy_vulns:
+            v.setdefault("sources", ["trivy"])
+            cve_id = v.get("VulnerabilityID", "")
+            seen[cve_id] = v
+
+        for v in grype_vulns:
+            cve_id = v.get("VulnerabilityID", "")
+            if cve_id in seen:
+                existing_sources = seen[cve_id].get("sources", ["trivy"])
+                if "grype" not in existing_sources:
+                    seen[cve_id]["sources"] = existing_sources + ["grype"]
+            else:
+                seen[cve_id] = v
+
+        return list(seen.values())
+
+    def scan_image_grype(self, severity: str = "CRITICAL,HIGH") -> Tuple[bool, Optional[List[Dict]]]:
+        """
+        Scan Docker image using Grype and return structured results.
+
+        Args:
+            severity: Comma-separated list of severity levels to include
+
+        Returns:
+            Tuple of (success: bool, vulnerabilities: List[Dict] | None)
+        """
+        severity = self._validate_severity(severity)
+        severity_set = {s.strip().upper() for s in severity.split(",")}
+        logger.info(f"Starting Grype scan for image: {self.image_name}")
+
+        try:
+            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TimeElapsedColumn(),
+                console=None,
+            ) as progress:
+                progress.add_task(f"[cyan]Scanning {self.image_name} with Grype...", total=None)
+
+                result = subprocess.run(
+                    ['grype', self.image_name, '-o', 'json'],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    timeout=600,
+                    shell=False
+                )
+
+            if result.returncode not in (0, 1):
+                error_msg = f"Grype scan returned exit code {result.returncode}"
+                if result.stderr:
+                    error_msg += f": {result.stderr[:200]}"
+                logger.error(error_msg)
+                ui.error(error_msg)
+                return False, None
+
+            if not result.stdout:
+                return True, []
+
+            filtered_results = self._parse_grype_output(result.stdout, severity_set)
+            self._print_compact_vulnerability_summary(filtered_results, label="[Grype]")
+            return True, filtered_results
+
+        except subprocess.TimeoutExpired:
+            error_msg = "Grype scan timed out after 600 seconds"
+            logger.error(error_msg)
+            ui.error(error_msg)
+            return False, None
+        except json.JSONDecodeError as e:
+            error_msg = f"Failed to parse Grype output: {e}"
+            logger.error(error_msg)
+            ui.error(error_msg)
+            return False, None
+        except Exception as e:
+            error_msg = f"Grype scan failed: {e}"
+            logger.error(error_msg, exc_info=True)
+            ui.error(error_msg)
+            return False, None
 
     def scan_dockerfile(self) -> Tuple[bool, Optional[str]]:
         """
@@ -907,17 +1112,34 @@ class DockerSecurityScanner:
 
         # Run image vulnerability scan (only if image name is provided)
         if self.image_name:
-            image_success, image_output = self.scan_image(severity)
-            results['image_scan']['success'] = image_success
-            results['image_scan']['output'] = image_output
-            results['image_scan']['skipped'] = False
-            if not image_success:
-                scan_status = False
+            scanner_mode = self.scanner
+            trivy_data: List[Dict] = []
+            grype_data: List[Dict] = []
 
-            # Get JSON data
-            json_success, json_data = self.scan_image_json(severity)
-            if json_success:
-                results['json_data'] = json_data
+            if scanner_mode in ("trivy", "all"):
+                image_success, image_output = self.scan_image(severity)
+                results['image_scan']['success'] = image_success
+                results['image_scan']['output'] = image_output
+                results['image_scan']['skipped'] = False
+                if not image_success:
+                    scan_status = False
+                trivy_success, trivy_data = self.scan_image_json(severity)
+                trivy_data = trivy_data or []
+
+            if scanner_mode in ("grype", "all") and self._grype_available:
+                grype_success, grype_data = self.scan_image_grype(severity)
+                grype_data = grype_data or []
+                if not grype_success and scanner_mode == "grype":
+                    scan_status = False
+                    results['image_scan']['skipped'] = False
+
+            if scanner_mode == "trivy":
+                results['json_data'] = trivy_data
+            elif scanner_mode == "grype":
+                results['image_scan']['skipped'] = False
+                results['json_data'] = grype_data
+            else:  # "all"
+                results['json_data'] = self._deduplicate_vulnerabilities(trivy_data, grype_data)
 
             # Cache results
             if self.use_cache:

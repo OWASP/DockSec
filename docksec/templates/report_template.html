@@ -309,6 +309,53 @@
         .rating-fair { background: rgba(217, 119, 6, 0.14); color: var(--medium); }
         .rating-poor { background: rgba(220, 38, 38, 0.12); color: var(--critical); }
 
+        .scanner-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .scanner-trivy { background: rgba(37, 99, 235, 0.12); color: var(--brand); }
+        .scanner-grype { background: rgba(217, 119, 6, 0.14); color: var(--medium); }
+        .scanner-both  { background: rgba(5, 150, 105, 0.14); color: var(--ok); }
+
+        .coverage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px;
+        }
+
+        .coverage-item {
+            background: var(--surface);
+            padding: 20px 16px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid var(--border);
+            border-top: 3px solid var(--brand);
+        }
+
+        .coverage-item.coverage-both { border-top-color: var(--ok); }
+
+        .coverage-count {
+            font-size: 2.1em;
+            font-weight: 700;
+            margin-bottom: 4px;
+            line-height: 1.1;
+            color: var(--text);
+        }
+
+        .coverage-label {
+            font-size: 0.78em;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
         .fixed-version { color: var(--ok); font-weight: 600; }
         .no-fix { color: var(--text-muted); font-style: italic; }
 
@@ -432,6 +479,9 @@
                 <h2>Vulnerability Summary</h2>
                 {{VULNERABILITY_SUMMARY}}
             </div>
+
+            <!-- Scanner Coverage Section (multi-scanner runs only) -->
+            {{SCANNER_COVERAGE_SECTION}}
 
             <!-- Detailed Vulnerabilities Section -->
             {{DETAILED_VULNERABILITIES_SECTION}}

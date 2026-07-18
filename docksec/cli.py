@@ -80,6 +80,9 @@ def main() -> None:
     parser.add_argument('-v', '--verbose', action='store_true', help='Show INFO-level log lines on stderr')
     parser.add_argument('--log-file', dest='log_file', metavar='FILE', help='Also append log lines to FILE, creating missing parent directories; combine with --verbose to capture INFO-level logs')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output (also honors the NO_COLOR env var)')
+    parser.add_argument('--scanner', choices=['trivy', 'grype', 'all'], default=None,
+                        help='Vulnerability scanner to use: trivy (default), grype, or all (both, deduplicated). '
+                             'Can also be set via DOCKSEC_SCANNER environment variable.')
     parser.add_argument('--version', action='version', version=f'DockSec {get_version()}')
 
     args = parser.parse_args()
@@ -92,6 +95,11 @@ def main() -> None:
         # NO_COLOR, so set it before those modules are imported.
         os.environ["NO_COLOR"] = "1"
     output.configure(quiet=args.quiet, no_color=no_color, json_mode=args.json_stdout)
+
+    # Resolve --scanner: CLI flag > DOCKSEC_SCANNER env var > default "trivy"
+    if args.scanner is None:
+        env_scanner = os.environ.get("DOCKSEC_SCANNER", "trivy").lower()
+        args.scanner = env_scanner if env_scanner in ("trivy", "grype", "all") else "trivy"
 
     # Set provider and model from CLI args if provided (overrides env vars)
     if args.provider:
@@ -280,6 +288,8 @@ def main() -> None:
     output.kv("Reports", output_dir)
     if run_scan:
         output.kv("Severity", severity)
+        scanner_label = {"trivy": "Trivy", "grype": "Grype", "all": "Trivy + Grype"}.get(args.scanner, args.scanner)
+        output.kv("Scanner", scanner_label)
     if run_ai:
         config = get_config()
         output.kv("AI Provider", str(config.llm_provider))
@@ -378,7 +388,8 @@ def main() -> None:
                 orchestrator = ComposeOrchestrator(
                     args.compose,
                     scan_only=not run_ai,
-                    skip_ai_scoring=args.skip_ai_scoring
+                    skip_ai_scoring=args.skip_ai_scoring,
+                    scanner=args.scanner,
                 )
                 output.info(f"Scanning Compose file: {args.compose}")
                 results = orchestrator.run_full_scan(severity)
@@ -396,7 +407,8 @@ def main() -> None:
                     results_dir=output_dir,
                     scan_only=not run_ai,
                     skip_ai_scoring=args.skip_ai_scoring,
-                    offline=args.offline
+                    offline=args.offline,
+                    scanner=args.scanner,
                 )
 
                 # Run appropriate scan based on mode
