@@ -423,6 +423,10 @@ def main() -> None:
                     results.get("json_data", []), ignore_entries)
                 if suppressed_count:
                     results["json_data"] = kept_findings
+                    # Recorded so the reports and JSON payload can state that
+                    # findings were waived rather than silently absent.
+                    results["suppressed_count"] = suppressed_count
+                    results["ignore_file"] = ignore_path
                     output.info(
                         f"{suppressed_count} finding(s) suppressed by ignore file {ignore_path}"
                     )
@@ -614,6 +618,9 @@ def _print_json_results(results, scanner, report_paths):
         "vulnerabilities": vulnerabilities,
         "severity_counts": output.count_by_severity(vulnerabilities),
     }
+    if results.get("suppressed_count"):
+        payload["scan_info"]["suppressed_count"] = results["suppressed_count"]
+        payload["scan_info"]["ignore_file"] = results.get("ignore_file")
     if "ai_findings" in results:
         payload["ai_analysis"] = results["ai_findings"]
     if report_paths:
@@ -668,8 +675,15 @@ def _quick_take_lines(results, counts, run_ai):
     if exposed:
         lines.append(f"{len(exposed)} likely exposed credential(s) flagged by AI analysis")
 
+    suppressed = results.get("suppressed_count")
+    if suppressed:
+        lines.append(f"{suppressed} triaged finding(s) suppressed via ignore file")
+
     if not run_ai and not results.get("ai_findings"):
-        lines.append("Run without --scan-only to add AI-powered explanations and fixes")
+        if results.get("scan_mode") == "image_only":
+            lines.append("Add a Dockerfile scan for AI-powered explanations and fixes: docksec <Dockerfile> -i <image>")
+        else:
+            lines.append("Run without --scan-only to add AI-powered explanations and fixes")
 
     return lines
 

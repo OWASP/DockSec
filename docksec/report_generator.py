@@ -742,13 +742,28 @@ class ReportGenerator:
             ),
         }
 
-        # Security Score Section
+        # Security Score Section (rating bands match the terminal summary in
+        # docksec.output._score_band)
+        score_rating_html = ""
+        if self.analysis_score is not None:
+            score = float(self.analysis_score)
+            if score >= 90:
+                rating, rating_class = "Excellent", "rating-excellent"
+            elif score >= 70:
+                rating, rating_class = "Good", "rating-good"
+            elif score >= 50:
+                rating, rating_class = "Fair", "rating-fair"
+            else:
+                rating, rating_class = "Poor", "rating-poor"
+            score_rating_html = f'<div class="score-rating {rating_class}">{rating}</div>'
+
         template_vars["SECURITY_SCORE_SECTION"] = f"""
         <div class="section">
             <h2>Security Score</h2>
             <div class="score-container">
                 <div class="score-label">Overall Security Score</div>
-                <div class="score-value">{self.analysis_score if self.analysis_score else 'N/A'}/100</div>
+                <div class="score-value">{self.analysis_score if self.analysis_score is not None else 'N/A'}/100</div>
+                {score_rating_html}
             </div>
         </div>
         """
@@ -836,7 +851,7 @@ class ReportGenerator:
                 )
             else:
                 dockerfile_output = results["dockerfile_scan"].get("output", "")
-                dockerfile_content = f'<pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 0.9em;">{self._escape_html(dockerfile_output[:2000])}</pre>'
+                dockerfile_content = f'<pre class="mono-block">{self._escape_html(dockerfile_output[:2000])}</pre>'
                 if len(dockerfile_output) > 2000:
                     dockerfile_content += (
                         "<p><em>Output truncated for display...</em></p>"
@@ -853,9 +868,15 @@ class ReportGenerator:
 
         # Vulnerability Summary
         if not vulnerabilities:
-            template_vars["VULNERABILITY_SUMMARY"] = (
-                '<div class="no-issues">No vulnerabilities found</div>'
-            )
+            no_issues_html = '<div class="no-issues">No vulnerabilities found</div>'
+            suppressed = results.get("suppressed_count")
+            if suppressed:
+                ignore_file = self._escape_html(str(results.get("ignore_file", "")))
+                no_issues_html += (
+                    f"<p><strong>Waived:</strong> {suppressed} triaged finding(s) "
+                    f"suppressed via ignore file {ignore_file}</p>"
+                )
+            template_vars["VULNERABILITY_SUMMARY"] = no_issues_html
             template_vars["DETAILED_VULNERABILITIES_SECTION"] = ""
         else:
             severity_counts = self._count_by_severity(vulnerabilities)
@@ -882,6 +903,20 @@ class ReportGenerator:
             <p><strong>Total vulnerabilities:</strong> {len(vulnerabilities)}</p>
             """
 
+            fixable = sum(1 for v in vulnerabilities if v.get("FixedVersion"))
+            if fixable:
+                severity_html += (
+                    f"<p><strong>Fix available:</strong> {fixable} of "
+                    f"{len(vulnerabilities)} findings have a fixed version upstream</p>"
+                )
+            suppressed = results.get("suppressed_count")
+            if suppressed:
+                ignore_file = self._escape_html(str(results.get("ignore_file", "")))
+                severity_html += (
+                    f"<p><strong>Waived:</strong> {suppressed} triaged finding(s) "
+                    f"suppressed via ignore file {ignore_file}</p>"
+                )
+
             template_vars["VULNERABILITY_SUMMARY"] = severity_html
 
             # Detailed vulnerabilities table
@@ -895,7 +930,8 @@ class ReportGenerator:
                             <th>ID</th>
                             <th>Severity</th>
                             <th>Package</th>
-                            <th>Version</th>
+                            <th>Installed</th>
+                            <th>Fixed In</th>
                             <th>Title</th>
                             <th>CVSS</th>
                             <th>Status</th>
@@ -928,6 +964,11 @@ class ReportGenerator:
                 vuln_id = vuln.get('VulnerabilityID') or 'N/A'
                 pkg_name = vuln.get('PkgName') or 'N/A'
                 installed_version = vuln.get('InstalledVersion') or 'N/A'
+                fixed_version = vuln.get('FixedVersion') or ''
+                fixed_cell = (
+                    f'<span class="fixed-version">{self._escape_html(fixed_version)}</span>'
+                    if fixed_version else '<span class="no-fix">none yet</span>'
+                )
                 title = vuln.get('Title') or 'N/A'
                 display_title = (title[:80] + '...') if len(title) > 80 else title
 
@@ -937,6 +978,7 @@ class ReportGenerator:
                             <td><span class="severity-badge {severity_class}">{vuln.get('Severity', 'N/A')}</span></td>
                             <td>{self._escape_html(pkg_name)}</td>
                             <td>{self._escape_html(installed_version)}</td>
+                            <td>{fixed_cell}</td>
                             <td>{self._escape_html(display_title)}</td>
                             <td>{cvss_score}</td>
                             <td><span class="status-badge {status_class}">{status}</span></td>
@@ -950,7 +992,7 @@ class ReportGenerator:
             """
 
             if len(vulnerabilities) > 50:
-                table_html += f'<p style="margin-top: 15px; font-style: italic; color: #666;">Showing 50 of {len(vulnerabilities)} vulnerabilities. See CSV/JSON for complete list.</p>'
+                table_html += f'<p class="table-note">Showing 50 of {len(vulnerabilities)} vulnerabilities. See CSV/JSON for complete list.</p>'
 
             table_html += "</div>"
             template_vars["DETAILED_VULNERABILITIES_SECTION"] = table_html

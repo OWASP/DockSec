@@ -25,6 +25,13 @@ slimmer install.
   support; the base `pip install docksec` is now a slim, scan-only core with no
   LLM dependencies.
 
+- HTML report improvements: a rating badge (Excellent/Good/Fair/Poor) next to the
+  security score matching the terminal bands, a "Fixed In" column in the
+  vulnerability table, a "fix available" summary line, and a note showing how many
+  findings were waived via the ignore file. Waiver information also appears in the
+  terminal Quick take and in `--json` output (`scan_info.suppressed_count`,
+  `scan_info.ignore_file`).
+
 ### Changed
 
 - AI analysis input limits raised from 50 lines / 2,000 characters to 400 lines /
@@ -47,6 +54,13 @@ slimmer install.
   dependencies (pandas, tqdm, tenacity) removed.
 
 ### Fixed
+
+- The Quick take in `--image-only` runs suggested removing `--scan-only` (the wrong
+  flag for that mode); it now suggests adding a Dockerfile scan.
+- The Trivy progress spinner no longer prints a half-drawn progress bar into
+  non-terminal output such as CI logs.
+- The Dockerfile scan block in the HTML report used a hardcoded light background
+  that was unreadable in dark mode; it now follows the report theme.
 
 - A narrower cached scan could previously be reused in situations where the image
   had been rebuilt under the same tag; digest keying fixes this class of stale

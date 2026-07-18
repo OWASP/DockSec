@@ -626,7 +626,9 @@ class DockerSecurityScanner:
                 # honors --json (which redirects human output to stderr) and
                 # never pollutes the machine-readable stdout payload.
                 console=ui.get_console(),
-                disable=ui.is_quiet(),
+                # No live spinner when quiet or when output is not a terminal
+                # (CI logs would otherwise capture a half-drawn progress bar).
+                disable=ui.is_quiet() or not ui.get_console().is_terminal,
             ) as progress:
                 scan_task = progress.add_task(
                     f"[cyan]Scanning {self.image_name}...",
