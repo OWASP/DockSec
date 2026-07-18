@@ -193,13 +193,15 @@ def get_llm() -> Union['ChatOpenAI', 'ChatAnthropic', 'ChatGoogleGenerativeAI', 
             if not os.getenv("ANTHROPIC_API_KEY"):
                 os.environ["ANTHROPIC_API_KEY"] = api_key
 
-            # Remove temperature if using newer models that don't support it
             llm_kwargs = {
                 "model": model,
                 "timeout": timeout,
                 "max_retries": max_retries
             }
-            if not any(model.startswith(prefix) for prefix in ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4"]):
+            # temperature is deprecated on Claude 4+ models and the API rejects
+            # it with a 400. Allowlist the old generations that support it
+            # instead of trying to enumerate every new model name.
+            if model.startswith(("claude-2", "claude-3")):
                 llm_kwargs["temperature"] = temperature
 
             llm = ChatAnthropic(**llm_kwargs)

@@ -55,6 +55,10 @@ slimmer install.
 
 ### Fixed
 
+- Anthropic models newer than the Claude 4 generation (e.g. claude-sonnet-5)
+  failed with a 400 error because the deprecated `temperature` parameter was
+  still sent; temperature is now only passed to the old Claude 2/3 generations
+  that support it.
 - The Quick take in `--image-only` runs suggested removing `--scan-only` (the wrong
   flag for that mode); it now suggests adding a Dockerfile scan.
 - The Trivy progress spinner no longer prints a half-drawn progress bar into
