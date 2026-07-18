@@ -71,6 +71,9 @@ def main() -> None:
     parser.add_argument('--sarif', dest='sarif', action='store_true', help='Write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools')
     parser.add_argument('--sbom', dest='sbom', action='store_true', help='Write a CycloneDX SBOM (.cdx.json) of the scanned image for supply-chain tooling (requires an image)')
     parser.add_argument('--offline', dest='offline', action='store_true', help='Run without network access: use the local Trivy DB (no DB update) and skip AI analysis')
+    parser.add_argument('--no-redact', dest='no_redact', action='store_true', help='Do not mask secret-looking values before sending file content to the AI provider')
+    parser.add_argument('--no-cache', dest='no_cache', action='store_true', help='Bypass the scan results cache and force a fresh scan')
+    parser.add_argument('--ignore-file', dest='ignore_file', metavar='FILE', help='Path to an ignore file listing findings to suppress (default: .docksec-ignore.yml in the current directory, if present)')
     parser.add_argument('--baseline', dest='baseline', metavar='FILE', help='Path to a baseline file; with --fail-on, only findings not present in the baseline trigger the gate')
     parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
@@ -99,6 +102,11 @@ def main() -> None:
     # Set compact output mode if requested
     if args.compact_output:
         os.environ["DOCKSEC_COMPACT_OUTPUT"] = "true"
+
+    # --no-cache: the scanner (and every per-service scanner in compose runs)
+    # reads DOCKSEC_USE_CACHE at construction time.
+    if args.no_cache:
+        os.environ["DOCKSEC_USE_CACHE"] = "false"
 
     if args.verbose and not os.getenv("DOCKSEC_LOG_LEVEL"):
         os.environ["DOCKSEC_LOG_LEVEL"] = "INFO"
@@ -321,8 +329,29 @@ def main() -> None:
                 output.error(f"No {file_type} content found.")
                 return
 
-            # Truncate content to reduce token usage
-            truncated_content = truncate_dockerfile(filecontent, max_lines=150, max_chars=4000) if run_compose_analysis else truncate_dockerfile(filecontent, max_lines=50, max_chars=2000)
+            # Redact secret-looking values before the content leaves the
+            # machine. Keys stay visible so the model can still flag exposed
+            # credentials; the secret material itself is masked.
+            if not args.no_redact:
+                from docksec.redact import redact_content
+                filecontent, redacted_count = redact_content(filecontent)
+                if redacted_count:
+                    output.info(
+                        f"Masked {redacted_count} secret-looking value(s) before AI analysis "
+                        f"(--no-redact to disable)"
+                    )
+
+            # Cap very large inputs to bound token usage; warn when anything
+            # is dropped so a partial analysis is never mistaken for a full one.
+            if run_compose_analysis:
+                truncated_content = truncate_dockerfile(filecontent, max_lines=600, max_chars=24000)
+            else:
+                truncated_content = truncate_dockerfile(filecontent, max_lines=400, max_chars=16000)
+            if truncated_content != filecontent:
+                output.warn(
+                    f"{file_type} is very large; AI analysis covers only the first part "
+                    f"of the file. Scanner results (Trivy/Hadolint) are unaffected."
+                )
 
             response = analyser_chain.invoke({"filecontent": truncated_content})
             ai_findings = analyze_security(response, compact=True, report_path=output_dir)
@@ -378,6 +407,29 @@ def main() -> None:
                 else:
                     # Full scan including Dockerfile
                     results = scanner.run_full_scan(severity)
+
+            # Apply ignore-file suppressions before scoring, reports, JSON
+            # output, and the --fail-on gate see the findings.
+            ignore_path = args.ignore_file
+            if not ignore_path:
+                from docksec.ignore import find_default_ignore_file
+                ignore_path = find_default_ignore_file()
+            if ignore_path:
+                from docksec.ignore import load_ignore_file, apply_ignores
+                ignore_entries, ignore_warnings = load_ignore_file(ignore_path)
+                for warning in ignore_warnings:
+                    output.warn(warning)
+                kept_findings, suppressed_count = apply_ignores(
+                    results.get("json_data", []), ignore_entries)
+                if suppressed_count:
+                    results["json_data"] = kept_findings
+                    # Recorded so the reports and JSON payload can state that
+                    # findings were waived rather than silently absent.
+                    results["suppressed_count"] = suppressed_count
+                    results["ignore_file"] = ignore_path
+                    output.info(
+                        f"{suppressed_count} finding(s) suppressed by ignore file {ignore_path}"
+                    )
 
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)
@@ -566,6 +618,9 @@ def _print_json_results(results, scanner, report_paths):
         "vulnerabilities": vulnerabilities,
         "severity_counts": output.count_by_severity(vulnerabilities),
     }
+    if results.get("suppressed_count"):
+        payload["scan_info"]["suppressed_count"] = results["suppressed_count"]
+        payload["scan_info"]["ignore_file"] = results.get("ignore_file")
     if "ai_findings" in results:
         payload["ai_analysis"] = results["ai_findings"]
     if report_paths:
@@ -620,8 +675,15 @@ def _quick_take_lines(results, counts, run_ai):
     if exposed:
         lines.append(f"{len(exposed)} likely exposed credential(s) flagged by AI analysis")
 
+    suppressed = results.get("suppressed_count")
+    if suppressed:
+        lines.append(f"{suppressed} triaged finding(s) suppressed via ignore file")
+
     if not run_ai and not results.get("ai_findings"):
-        lines.append("Run without --scan-only to add AI-powered explanations and fixes")
+        if results.get("scan_mode") == "image_only":
+            lines.append("Add a Dockerfile scan for AI-powered explanations and fixes: docksec <Dockerfile> -i <image>")
+        else:
+            lines.append("Run without --scan-only to add AI-powered explanations and fixes")
 
     return lines
 

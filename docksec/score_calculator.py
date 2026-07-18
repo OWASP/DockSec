@@ -7,7 +7,6 @@ It uses LLM-based analysis to provide comprehensive security scoring.
 
 import re
 from typing import Dict
-from docksec.config import docker_score_prompt
 from docksec.enums import Severity
 from docksec.utils import ScoreResponse, get_llm, get_custom_logger
 
@@ -35,6 +34,7 @@ class SecurityScoreCalculator:
 
         from docksec.enums import LLMProvider
         from docksec.config_manager import get_config
+        from docksec.config import docker_score_prompt
         config = get_config()
         provider = config.llm_provider
         llm = get_llm()

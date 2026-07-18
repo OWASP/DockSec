@@ -398,6 +398,23 @@ class TestCLIHelpers(unittest.TestCase):
         lines = _quick_take_lines(results, counts, run_ai=False)
         self.assertTrue(any("--scan-only" in line for line in lines))
 
+    def test_quick_take_image_only_hint_does_not_mention_scan_only(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {"dockerfile_scan": {"skipped": True}, "scan_mode": "image_only"}
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=False)
+        self.assertFalse(any("--scan-only" in line for line in lines))
+        self.assertTrue(any("Dockerfile" in line for line in lines))
+
+    def test_quick_take_reports_suppressed_findings(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {"dockerfile_scan": {"skipped": True}, "suppressed_count": 4}
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        self.assertTrue(any("4 triaged finding(s) suppressed" in line for line in lines))
+
     def test_suggest_next_command_recommends_image_scan(self):
         from docksec.cli import _suggest_next_command
 

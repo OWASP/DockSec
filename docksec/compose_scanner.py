@@ -209,18 +209,59 @@ class ComposeScanner:
         key = str(key).lower()
         return any(s in key for s in ['password', 'secret', 'token', 'api_key', 'private_key', 'private-key'])
 
+    # Ports whose exposure on all interfaces is a real risk signal: remote
+    # admin, databases, caches, message brokers, and the Docker API itself.
+    # Ordinary web ports (80/443/8080/...) are excluded on purpose - flagging
+    # every published port buries the findings that matter.
+    SENSITIVE_PORTS = {
+        22, 23, 111, 445, 1433, 1521, 2181, 2375, 2376, 2379, 3306, 3389,
+        5432, 5900, 5984, 6379, 8086, 8500, 9092, 9200, 9300, 11211, 15672,
+        27017, 27018,
+    }
+
+    @staticmethod
+    def _parse_port_entry(port) -> tuple:
+        """Normalize a compose port entry to (host_ip, published_port).
+
+        Handles short syntax ("8080", "8080:80", "127.0.0.1:8080:80", with
+        optional /protocol suffix) and long syntax dicts. host_ip is None when
+        the entry binds all interfaces; published_port is None when it cannot
+        be determined (e.g. port ranges).
+        """
+        host_ip = None
+        published = None
+        if isinstance(port, dict):
+            host_ip = port.get('host_ip')
+            published = port.get('published') or port.get('target')
+        else:
+            port_str = str(port).split('/')[0]
+            parts = port_str.rsplit(':', 2)
+            if len(parts) == 3:
+                host_ip, published = parts[0], parts[1]
+            elif len(parts) == 2:
+                published = parts[0]
+            else:
+                # Bare container port: published to a host port on 0.0.0.0.
+                published = parts[0]
+        try:
+            published = int(str(published))
+        except (TypeError, ValueError):
+            published = None
+        return host_ip, published
+
     def _check_port_bound_all_interfaces(self, service: str, config: dict, default_line: int):
         ports = config.get('ports', [])
         if not isinstance(ports, list):
             return
+        local_ips = {'127.0.0.1', 'localhost', '::1'}
         for port in ports:
-            port_str = str(port)
-            # If it's just "8080:80" or "8080", it binds to 0.0.0.0 by default
-            # If it's "127.0.0.1:8080:80", it's bound to localhost
-            if ':' in port_str and not port_str.startswith('127.0.0.1:') and not port_str.startswith('localhost:'):
+            host_ip, published = self._parse_port_entry(port)
+            if host_ip and str(host_ip) in local_ips:
+                continue
+            if published in self.SENSITIVE_PORTS:
                 self._add_finding(
-                    "compose-port-bound-all-interfaces", Severity.HIGH, "Port Bound to All Interfaces",
-                    "A sensitive or admin port published with no host IP, binding 0.0.0.0.",
+                    "compose-port-bound-all-interfaces", Severity.HIGH, "Sensitive Port Bound to All Interfaces",
+                    f"Port {published} (admin/database/broker) is published with no host IP, binding 0.0.0.0.",
                     "Bind to 127.0.0.1, or use expose for internal-only traffic.",
                     service, self._get_line(ports, default_line)
                 )
@@ -242,7 +283,7 @@ class ComposeScanner:
     def _check_no_non_root_user(self, service: str, config: dict, default_line: int):
         if 'user' not in config:
             self._add_finding(
-                "compose-no-non-root-user", Severity.HIGH, "No Non-Root User",
+                "compose-no-non-root-user", Severity.MEDIUM, "No Non-Root User",
                 "A service has no user directive and the image likely runs as root.",
                 "Set a non-root user.",
                 service, default_line
@@ -269,7 +310,7 @@ class ComposeScanner:
             
         if not has_limits:
             self._add_finding(
-                "compose-no-resource-limits", Severity.MEDIUM, "No Resource Limits",
+                "compose-no-resource-limits", Severity.LOW, "No Resource Limits",
                 "No memory or CPU limits.",
                 "Set limits to bound the DoS and blast-radius surface.",
                 service, default_line
@@ -287,7 +328,7 @@ class ComposeScanner:
     def _check_writable_root_fs(self, service: str, config: dict, default_line: int):
         if config.get('read_only') is not True:
             self._add_finding(
-                "compose-writable-root-fs", Severity.MEDIUM, "Writable Root Filesystem",
+                "compose-writable-root-fs", Severity.LOW, "Writable Root Filesystem",
                 "no read_only: true on a service that does not need a writable root.",
                 "Set read_only with explicit tmpfs where needed.",
                 service, default_line
