@@ -373,8 +373,15 @@ class DockerSecurityScanner:
             image_id = (result.stdout or "").strip()
             if result.returncode == 0 and image_id:
                 return image_id
-        except Exception:
-            pass
+            logger.debug(
+                f"docker image inspect returned no ID for {self.image_name} "
+                f"(rc={result.returncode}); caching by image name instead"
+            )
+        except (subprocess.SubprocessError, OSError) as e:
+            logger.debug(
+                f"Could not resolve image ID for {self.image_name} ({e}); "
+                f"caching by image name instead"
+            )
         return self.image_name
 
     def _dockerfile_fingerprint(self) -> str:
