@@ -1,27 +1,16 @@
-# Core dependencies - pinned to specific versions for fast, reliable installs
-pydantic==2.13.4
-langchain-core==1.3.3
-langchain==1.2.18
-langchain-openai==1.2.1
-langchain-anthropic==1.4.3
-langchain-google-genai==4.2.2
-langchain-ollama==1.1.0
-python-dotenv==1.2.2
-pandas==3.0.3
-
-# UI and progress
-tqdm==4.67.3
-colorama==0.4.6
-rich==15.0.0
-
-# PDF generation
-fpdf2==2.8.7
-
-# Retry logic
-tenacity==9.1.4
-
-# YAML parsing
+# Core dependencies (scan-only install, no LLM stack)
+pydantic>=2.13,<3
+python-dotenv>=1.0,<2
+colorama>=0.4.6,<1
+rich>=13.0,<16
+fpdf2>=2.8,<3
 ruamel.yaml>=0.18.6
-
-# Build tools
 setuptools>=82.0.1
+
+# AI analysis dependencies (the docksec[ai] extra)
+langchain-core>=1.3,<2
+langchain>=1.2,<2
+langchain-openai>=1.2,<2
+langchain-anthropic>=1.4,<2
+langchain-google-genai>=4.2,<5
+langchain-ollama>=1.1,<2

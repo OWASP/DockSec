@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="docksec",
-    version="2026.7.3",
+    version="2026.7.5",
     description="AI-Powered Docker Security Analyzer",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -23,21 +23,14 @@ setup(
         "Source Code": "https://github.com/OWASP/DockSec",
     },
     python_requires=">=3.12",
+    # Core install is scan-only (Trivy/Hadolint wrappers, reports, scoring)
+    # with no LLM stack. AI analysis needs the [ai] extra.
     install_requires=[
-        "pydantic==2.13.4",
-        "langchain-core==1.3.3",
-        "langchain==1.2.18",
-        "langchain-openai==1.2.1",
-        "langchain-anthropic==1.4.3",
-        "langchain-google-genai==4.2.2",
-        "langchain-ollama==1.1.0",
-        "python-dotenv==1.2.2",
-        "pandas==3.0.3",
-        "tqdm==4.67.3",
-        "colorama==0.4.6",
-        "rich==15.0.0",
-        "fpdf2==2.8.7",
-        "tenacity==9.1.4",
+        "pydantic>=2.13,<3",
+        "python-dotenv>=1.0,<2",
+        "colorama>=0.4.6,<1",
+        "rich>=13.0,<16",
+        "fpdf2>=2.8,<3",
         "setuptools>=65.0.0",
         "ruamel.yaml>=0.18.6",
     ],
@@ -50,6 +43,14 @@ setup(
             "isort",
             "flake8",
             "mypy",
+        ],
+        "ai": [
+            "langchain-core>=1.3,<2",
+            "langchain>=1.2,<2",
+            "langchain-openai>=1.2,<2",
+            "langchain-anthropic>=1.4,<2",
+            "langchain-google-genai>=4.2,<5",
+            "langchain-ollama>=1.1,<2",
         ],
     },
     classifiers=[

@@ -3,16 +3,15 @@ import sys
 import os
 from typing import Union, List, Optional, Dict
 
-# Import OpenAI (required)
+# All LLM providers are optional: the core (scan-only) install ships without
+# the AI dependency stack. Install AI support with: pip install "docksec[ai]"
 try:
     from langchain_openai import ChatOpenAI
-except ImportError as e:
-    raise ImportError(
-        f"Failed to import langchain_openai: {e}. "
-        "Please install: pip install langchain-openai"
-    )
+    OPENAI_AVAILABLE = True
+except ImportError:
+    ChatOpenAI = None
+    OPENAI_AVAILABLE = False
 
-# Import optional providers
 try:
     from langchain_anthropic import ChatAnthropic
     ANTHROPIC_AVAILABLE = True
@@ -46,20 +45,6 @@ except ImportError:
         )
 from colorama import init
 from rich.console import Console
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
-    after_log
-)
-from openai import (
-    APIError,
-    RateLimitError,
-    APIConnectionError,
-    APITimeoutError
-)
 
 def get_custom_logger(name: str = 'Docksec', user_facing: bool = False):
     logger = logging.getLogger(name)
@@ -138,22 +123,7 @@ class AnalyzesResponse(BaseModel):
 class ScoreResponse(BaseModel):
     score: float = Field(description="Security score for the Dockerfile")
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type((APIError, APIConnectionError, APITimeoutError, RateLimitError)),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-    after=after_log(logger, logging.INFO)
-)
-def _call_llm_with_retry(llm, *args, **kwargs):
-    """
-    Internal function to call LLM with retry logic.
-    Retries on transient errors with exponential backoff.
-    """
-    return llm.invoke(*args, **kwargs)
-
-
-def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'ChatOllama']:
+def get_llm() -> Union['ChatOpenAI', 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'ChatOllama']:
     """
     Get LLM instance with retry logic and rate limiting support.
     
@@ -194,6 +164,12 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
         logger.info(f"Initializing LLM with provider: {provider}, model: {model}")
         
         if provider == LLMProvider.OPENAI:
+            if not OPENAI_AVAILABLE:
+                raise ImportError(
+                    "AI analysis requested but the AI dependencies are not installed. "
+                    "Install them with: pip install \"docksec[ai]\" "
+                    "(or use --scan-only for local scanning without AI)"
+                )
             api_key = config.get_api_key_for_provider()
             if not os.getenv("OPENAI_API_KEY"):
                 os.environ["OPENAI_API_KEY"] = api_key
@@ -211,19 +187,21 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             if not ANTHROPIC_AVAILABLE:
                 raise ImportError(
                     "Anthropic provider requested but langchain-anthropic is not installed. "
-                    "Install it with: pip install langchain-anthropic"
+                    "Install it with: pip install langchain-anthropic (or: pip install \"docksec[ai]\")"
                 )
             api_key = config.get_api_key_for_provider()
             if not os.getenv("ANTHROPIC_API_KEY"):
                 os.environ["ANTHROPIC_API_KEY"] = api_key
 
-            # Remove temperature if using newer models that don't support it
             llm_kwargs = {
                 "model": model,
                 "timeout": timeout,
                 "max_retries": max_retries
             }
-            if not any(model.startswith(prefix) for prefix in ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4"]):
+            # temperature is deprecated on Claude 4+ models and the API rejects
+            # it with a 400. Allowlist the old generations that support it
+            # instead of trying to enumerate every new model name.
+            if model.startswith(("claude-2", "claude-3")):
                 llm_kwargs["temperature"] = temperature
 
             llm = ChatAnthropic(**llm_kwargs)
@@ -234,7 +212,7 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             if not GOOGLE_AVAILABLE:
                 raise ImportError(
                     "Google provider requested but langchain-google-genai is not installed. "
-                    "Install it with: pip install langchain-google-genai"
+                    "Install it with: pip install langchain-google-genai (or: pip install \"docksec[ai]\")"
                 )
             api_key = config.get_api_key_for_provider()
             if not os.getenv("GOOGLE_API_KEY"):
@@ -257,7 +235,7 @@ def get_llm() -> Union[ChatOpenAI, 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'C
             if not OLLAMA_AVAILABLE:
                 raise ImportError(
                     "Ollama provider requested but langchain-ollama is not installed. "
-                    "Install it with: pip install langchain-ollama"
+                    "Install it with: pip install langchain-ollama (or: pip install \"docksec[ai]\")"
                 )
             llm = ChatOllama(
                 model=model,

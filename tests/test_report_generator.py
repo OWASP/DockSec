@@ -302,6 +302,59 @@ def test_html_ai_findings_are_escaped(tmp_path):
     assert "&lt;script&gt;" in content
 
 
+def test_html_shows_score_rating_fixed_version_and_waivers(tmp_path):
+    vulns = [
+        {
+            "VulnerabilityID": "CVE-2023-1234",
+            "Severity": "CRITICAL",
+            "PkgName": "openssl",
+            "InstalledVersion": "1.0.0",
+            "FixedVersion": "1.0.2",
+            "Title": "Buffer overflow in openssl",
+            "CVSS": 9.8,
+            "Status": "fixed",
+            "Target": "python:3.9-slim",
+        },
+        {
+            "VulnerabilityID": "CVE-2023-9999",
+            "Severity": "HIGH",
+            "PkgName": "zlib",
+            "InstalledVersion": "1.2.0",
+            "Title": "zlib issue",
+            "CVSS": 7.0,
+            "Status": "affected",
+            "Target": "python:3.9-slim",
+        },
+    ]
+    results = make_results(vulns)
+    results["suppressed_count"] = 3
+    results["ignore_file"] = ".docksec-ignore.yml"
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    rg.set_analysis_score(55)
+    output_path = rg.generate_html_report(results)
+    with open(output_path, encoding="utf-8") as f:
+        content = f.read()
+
+    assert 'class="score-rating rating-fair">Fair<' in content
+    assert "Fixed In" in content
+    assert '<span class="fixed-version">1.0.2</span>' in content
+    assert '<span class="no-fix">none yet</span>' in content
+    assert "1 of 2 findings have a fixed version upstream" in content
+    assert "3 triaged finding(s) suppressed via ignore file .docksec-ignore.yml" in content
+
+
+def test_html_waiver_note_shown_when_all_findings_suppressed(tmp_path):
+    results = make_results([])
+    results["suppressed_count"] = 5
+    results["ignore_file"] = ".docksec-ignore.yml"
+    rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
+    output_path = rg.generate_html_report(results)
+    with open(output_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "No vulnerabilities found" in content
+    assert "5 triaged finding(s) suppressed" in content
+
+
 def test_html_omits_ai_section_without_findings(tmp_path):
     results = make_results([])  # no ai_findings key
     rg = ReportGenerator(image_name="test-image", results_dir=str(tmp_path))
