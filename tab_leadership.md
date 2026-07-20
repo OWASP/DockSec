@@ -18,7 +18,7 @@ tags: docksec
 <div class="project-leaders">
     <div class="leader-profile">
         <img src="https://github.com/advaitpatel.png" alt="Advait Patel" class="leader-image">
-        <h3>Advait Patel - Project Lead</h3>
+        <h3>Advait Patel - Creator & Project Lead</h3>
 
         <div class="social-links">
             <a href="https://www.linkedin.com/in/advaitpatel93/" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>
@@ -27,7 +27,7 @@ tags: docksec
     </div>
     <div class="leader-profile">
         <img src="https://github.com/arkid15r.png" alt="Arkadii Yakovets" class="leader-image">
-        <h3>Arkadii Yakovets - Project Co-lead</h3>
+        <h3>Arkadii Yakovets - Mentor</h3>
 
         <div class="social-links">
             <a href="https://www.linkedin.com/in/arkid15r/" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>
