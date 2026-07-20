@@ -8,9 +8,9 @@ ruamel.yaml>=0.18.6
 setuptools>=82.0.1
 
 # AI analysis dependencies (the docksec[ai] extra)
-langchain-core>=1.3,<2
-langchain>=1.2,<2
-langchain-openai>=1.2,<2
-langchain-anthropic>=1.4,<2
-langchain-google-genai>=4.2,<5
+langchain-core>=1.4.9,<2
+langchain>=1.3.14,<2
+langchain-openai>=1.3.5,<2
+langchain-anthropic>=1.4.8,<2
+langchain-google-genai>=4.2.7,<5
 langchain-ollama>=1.1,<2
