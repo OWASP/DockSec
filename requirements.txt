@@ -2,7 +2,7 @@
 pydantic>=2.13,<3
 python-dotenv>=1.0,<2
 colorama>=0.4.6,<1
-rich>=13.0,<16
+rich>=15.0.0,<16
 fpdf2>=2.8,<3
 ruamel.yaml>=0.18.6
 setuptools>=82.0.1
