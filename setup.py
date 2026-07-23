@@ -35,6 +35,15 @@ setup(
         "ruamel.yaml>=0.18.6",
     ],
     extras_require={
+        "dev": [
+            "pytest",
+            "pytest-cov",
+            "pytest-mock",
+            "black",
+            "isort",
+            "flake8",
+            "mypy",
+        ],
         "ai": [
             "langchain-core>=1.3,<2",
             "langchain>=1.2,<2",

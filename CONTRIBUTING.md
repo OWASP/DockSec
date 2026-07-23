@@ -134,21 +134,16 @@ Unsure where to begin? Look for issues labeled:
 
 3. **Install dependencies**:
    ```bash
-   pip install -e .
+   pip install -e ".[dev]"
    pip install -r requirements.txt
    ```
 
-4. **Install development dependencies**:
-   ```bash
-   pip install pytest pytest-cov black isort flake8 mypy
-   ```
-
-5. **Install external tools** (optional, for full testing):
+4. **Install external tools** (optional, for full testing):
    ```bash
    python -m docksec.setup_external_tools
    ```
 
-6. **Set up environment variables**:
+5. **Set up environment variables**:
    ```bash
    cp .env.example .env
    # Edit .env and add your OpenAI API key if testing AI features
