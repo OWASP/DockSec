@@ -5,7 +5,7 @@ colorama>=0.4.6,<1
 rich>=13.0,<16
 fpdf2>=2.8,<3
 ruamel.yaml>=0.18.6
-setuptools>=82.0.1
+setuptools>=83.0.0
 
 # AI analysis dependencies (the docksec[ai] extra)
 langchain-core>=1.3,<2
