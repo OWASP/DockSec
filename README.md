@@ -28,7 +28,7 @@
 
 ## What is DockSec?
 
-DockSec is an **OWASP Lab Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Hadolint, Docker Scout) with AI to provide **context-aware security analysis**.
+DockSec is an **OWASP Lab Project** that bridges the gap between complex security scan results and actionable developer fixes. It integrates industry-standard scanners (Trivy, Grype, Hadolint, Docker Scout) with AI to provide **context-aware security analysis**.
 
 Instead of overwhelming you with a list of 200+ CVEs, DockSec:
 
@@ -50,7 +50,7 @@ Everything scans locally; the only thing that ever leaves your machine is the (s
 
 DockSec follows a four-stage pipeline:
 
-1. **Scan**: Runs Trivy, Hadolint, and Docker Scout locally on your environment.
+1. **Scan**: Runs Trivy, Grype, Hadolint, and Docker Scout locally on your environment.
 2. **Analyze**: AI correlates findings across all scanners to remove noise and assess real-world impact.
 3. **Recommend**: Generates human-readable explanations and specific remediation steps.
 4. **Report**: Exports actionable results as HTML, PDF, JSON, CSV, SARIF, and CycloneDX SBOM.
@@ -67,10 +67,11 @@ DockSec orchestrates local scanners, so it needs:
 |---|---|---|
 | Python 3.12+ | DockSec itself | [python.org](https://www.python.org/downloads/) |
 | Trivy | All scans (required) | `brew install trivy` or [Trivy docs](https://trivy.dev/latest/getting-started/installation/) |
+| Grype | Vulnerability scanning (optional) | `brew install anchore/grype/grype` or [Grype docs](https://github.com/anchore/grype#installation) |
 | Hadolint | Dockerfile linting | `brew install hadolint` or [Hadolint docs](https://github.com/hadolint/hadolint#install) |
 | Docker | Image scans (`-i`) | [Docker docs](https://docs.docker.com/get-docker/) |
 
-Or let DockSec install Trivy and Hadolint for you:
+Or let DockSec install Trivy, Grype, and Hadolint for you:
 
 ```bash
 python -m docksec.setup_external_tools
@@ -178,6 +179,12 @@ docksec Dockerfile --scan-only --sarif
 
 # Write a CycloneDX SBOM of an image for supply-chain tooling
 docksec --image-only -i myapp:latest --sbom
+
+# Use Grype instead of Trivy for vulnerability scanning
+docksec -i myapp:latest --image-only --scanner grype
+
+# Run both Trivy and Grype, deduplicate findings
+docksec -i myapp:latest --image-only --scanner all
 
 # Fully offline scan: local Trivy DB, no network, no AI
 docksec --image-only -i myapp:latest --offline
@@ -339,7 +346,7 @@ it is independent of `--format`.
 
 DockSec is designed so you always know what leaves your machine:
 
-- **Scanning is fully local.** Trivy, Hadolint, and the security score run on your
+- **Scanning is fully local.** Trivy, Grype, Hadolint, and the security score run on your
   machine. Image contents are never uploaded anywhere by DockSec.
 - **AI analysis sends only the scanned file.** When the AI pass runs, the Dockerfile
   or compose file content (plus a short summary of vulnerability counts for scoring)
@@ -403,7 +410,8 @@ command updates the DockSec section in place instead of duplicating it.
 - **Multi-LLM Support**: OpenAI, Anthropic Claude, Google Gemini, or local models via Ollama.
 - **Privacy First**: Secret values are redacted before any content reaches an AI provider, scanning is fully local, and there is no telemetry.
 - **Docker Compose Scanning**: Detect orchestration-level misconfigurations and scan all services in a compose file.
-- **Deep Integration**: Combines Trivy (vulnerabilities), Hadolint (linting), and Docker Scout.
+- **Multi-Scanner**: Run Trivy, Grype, or both (`--scanner all`) with automatic deduplication by CVE ID.
+- **Deep Integration**: Combines Trivy (vulnerabilities), Grype (vulnerabilities), Hadolint (linting), and Docker Scout.
 - **Security Scoring**: A 0-100 score with a rating to track your security posture over time.
 - **Rich Formats**: HTML (interactive), PDF, JSON, CSV, SARIF, and CycloneDX SBOM.
 - **CI/CD Ready**: `--fail-on` exit codes, baseline/ratchet mode, auditable waivers, JSON-to-stdout, and a GitHub Action on the Marketplace.

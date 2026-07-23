@@ -115,7 +115,17 @@ class ReportGenerator:
             "vulnerabilities": json_results,
             "severity_counts": self._count_by_severity(json_results),
         }
-        
+
+        # Add scanner coverage when vulnerability data is present
+        if json_results:
+            coverage = self._build_scanner_coverage(json_results)
+            report_data["scanners_used"] = coverage["scanners_used"]
+            report_data["scanner_coverage"] = {
+                "trivy_only": coverage["trivy_only"],
+                "grype_only": coverage["grype_only"],
+                "confirmed_by_both": coverage["confirmed_by_both"],
+            }
+
         # Add AI findings if available
         if "ai_findings" in results:
             report_data["ai_analysis"] = results["ai_findings"]
@@ -866,6 +876,11 @@ class ReportGenerator:
         else:
             template_vars["DOCKERFILE_SECTION"] = ""
 
+        # Scanner Coverage Section (only shown for multi-scanner runs)
+        template_vars["SCANNER_COVERAGE_SECTION"] = (
+            self._build_scanner_coverage_html(vulnerabilities)
+        )
+
         # Vulnerability Summary
         if not vulnerabilities:
             no_issues_html = '<div class="no-issues">No vulnerabilities found</div>'
@@ -935,6 +950,7 @@ class ReportGenerator:
                             <th>Title</th>
                             <th>CVSS</th>
                             <th>Status</th>
+                            <th>Scanner</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -982,6 +998,7 @@ class ReportGenerator:
                             <td>{self._escape_html(display_title)}</td>
                             <td>{cvss_score}</td>
                             <td><span class="status-badge {status_class}">{status}</span></td>
+                            <td>{self._get_scanner_badge_html(vuln)}</td>
                         </tr>
                 """
 
@@ -1047,6 +1064,137 @@ class ReportGenerator:
             '<div class="section"><h2>AI Dockerfile Analysis</h2>'
             '<div class="config-issues">' + "".join(blocks) + "</div></div>"
         )
+
+    @staticmethod
+    def _build_scanner_coverage(vulnerabilities: List[Dict]) -> Dict:
+        """
+        Analyze the ``sources`` field of each vulnerability to produce
+        scanner-coverage statistics.
+
+        Args:
+            vulnerabilities: List of vulnerability dicts (each may carry a
+                ``sources`` list such as ``["trivy"]``, ``["grype"]``, or
+                ``["trivy", "grype"]``).
+
+        Returns:
+            Dict with keys: total, trivy_only, grype_only, confirmed_by_both,
+            scanners_used (list of scanner names observed).
+        """
+        trivy_only = 0
+        grype_only = 0
+        confirmed_by_both = 0
+        scanners_seen: set = set()
+
+        for vuln in vulnerabilities:
+            sources = vuln.get("sources") or []
+            scanners_seen.update(sources)
+            has_trivy = "trivy" in sources
+            has_grype = "grype" in sources
+            if has_trivy and has_grype:
+                confirmed_by_both += 1
+            elif has_trivy:
+                trivy_only += 1
+            elif has_grype:
+                grype_only += 1
+
+        return {
+            "total": len(vulnerabilities),
+            "trivy_only": trivy_only,
+            "grype_only": grype_only,
+            "confirmed_by_both": confirmed_by_both,
+            "scanners_used": sorted(scanners_seen),
+        }
+
+    def _build_scanner_coverage_html(self, vulnerabilities: List[Dict]) -> str:
+        """
+        Build an HTML section showing scanner-coverage statistics.
+
+        The section is only rendered when multiple scanners contributed
+        findings; single-scanner runs return an empty string so the report
+        stays clean.
+
+        Args:
+            vulnerabilities: List of vulnerability dicts.
+
+        Returns:
+            HTML string for the coverage section, or ``""`` for single-scanner
+            runs.
+        """
+        coverage = self._build_scanner_coverage(vulnerabilities)
+        if len(coverage["scanners_used"]) < 2:
+            return ""
+
+        total = coverage["total"]
+        trivy_only = coverage["trivy_only"]
+        grype_only = coverage["grype_only"]
+        both = coverage["confirmed_by_both"]
+
+        # Percentages (guard against division by zero even though total > 0
+        # is implied when two scanners are used).
+        pct = lambda n: f"{n / total * 100:.1f}" if total else "0.0"  # noqa: E731
+
+        return (
+            '<div class="section">'
+            "<h2>Scanner Coverage</h2>"
+            '<div class="coverage-grid">'
+            # Trivy-only
+            '<div class="coverage-item">'
+            f'<div class="coverage-count">{trivy_only}</div>'
+            f'<div class="coverage-label">Trivy Only ({pct(trivy_only)}%)</div>'
+            "</div>"
+            # Grype-only
+            '<div class="coverage-item">'
+            f'<div class="coverage-count">{grype_only}</div>'
+            f'<div class="coverage-label">Grype Only ({pct(grype_only)}%)</div>'
+            "</div>"
+            # Both
+            '<div class="coverage-item coverage-both">'
+            f'<div class="coverage-count">{both}</div>'
+            f'<div class="coverage-label">Confirmed by Both ({pct(both)}%)</div>'
+            "</div>"
+            # Total
+            '<div class="coverage-item">'
+            f'<div class="coverage-count">{total}</div>'
+            '<div class="coverage-label">Total Unique</div>'
+            "</div>"
+            "</div>"
+            "</div>"
+        )
+
+    def _get_scanner_badge_html(self, vuln: Dict) -> str:
+        """
+        Return an HTML badge ``<span>`` indicating which scanner(s) found a
+        vulnerability.
+
+        CSS classes used:
+        - ``scanner-badge scanner-trivy``  -- Trivy only
+        - ``scanner-badge scanner-grype``  -- Grype only
+        - ``scanner-badge scanner-both``   -- both scanners
+
+        Args:
+            vuln: A single vulnerability dict.
+
+        Returns:
+            HTML string for the badge.
+        """
+        sources = vuln.get("sources") or []
+        has_trivy = "trivy" in sources
+        has_grype = "grype" in sources
+
+        if has_trivy and has_grype:
+            css_class = "scanner-both"
+            label = "Trivy + Grype"
+        elif has_grype:
+            css_class = "scanner-grype"
+            label = "Grype"
+        elif has_trivy:
+            css_class = "scanner-trivy"
+            label = "Trivy"
+        else:
+            css_class = "scanner-trivy"
+            label = "Unknown"
+
+        return f'<span class="scanner-badge {css_class}">{label}</span>'
 
     def _escape_html(self, text: str) -> str:
         """

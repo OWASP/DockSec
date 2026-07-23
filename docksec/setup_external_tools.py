@@ -46,6 +46,17 @@ def get_latest_trivy_version():
         print(f"Error getting latest Trivy version: {str(e)}")
         return None
 
+def get_latest_grype_version():
+    """Get the latest Grype release version from GitHub API."""
+    try:
+        url = "https://api.github.com/repos/anchore/grype/releases/latest"
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode())
+            return data["tag_name"].lstrip('v')
+    except Exception as e:
+        print(f"Error getting latest Grype version: {str(e)}")
+        return None
+
 def install_hadolint():
     """Install Hadolint based on the operating system."""
     os_type = get_os_type()
@@ -164,6 +175,74 @@ def install_trivy():
         print(f"Error installing Trivy: {str(e)}")
         return False
 
+def install_grype():
+    """Install Grype based on the operating system."""
+    os_type = get_os_type()
+
+    if check_command_exists("grype"):
+        success, version = run_command(["grype", "version"])
+        if success:
+            print(f"Grype is already installed: {version.strip()}")
+            return True
+
+    print("Installing Grype...")
+
+    try:
+        if os_type == "windows":
+            # Get latest version
+            version = get_latest_grype_version()
+            if not version:
+                print("Failed to get latest Grype version")
+                return False
+
+            # Create installation directory in user's home
+            install_dir = Path(os.environ.get("USERPROFILE", "")) / "grype"
+            install_dir.mkdir(parents=True, exist_ok=True)
+
+            # Download URL for Windows
+            url = f"https://github.com/anchore/grype/releases/download/v{version}/grype_{version}_windows_amd64.zip"
+            zip_path = install_dir / "grype.zip"
+
+            # Download and extract
+            print(f"Downloading Grype v{version}...")
+            urllib.request.urlretrieve(url, str(zip_path))
+
+            # Extract the zip file
+            with zipfile.ZipFile(str(zip_path), 'r') as zip_ref:
+                zip_ref.extractall(str(install_dir))
+
+            # Clean up zip file
+            zip_path.unlink()
+
+            # Add to PATH if not already there
+            user_path = os.environ.get("PATH", "")
+            if str(install_dir) not in user_path:
+                # Using setx to permanently add to PATH
+                subprocess.run(["setx", "PATH", f"{user_path};{install_dir}"], shell=True)
+                print("Added Grype to PATH. Please restart your terminal for the changes to take effect.")
+
+        elif os_type == "mac":
+            success, _ = run_command(["brew", "install", "anchore/grype/grype"])
+            if not success:
+                print("Please install Homebrew first: https://brew.sh")
+                return False
+
+        elif os_type == "linux":
+            success, _ = run_command(
+                "curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin",
+                shell=True
+            )
+            if not success:
+                print("Error installing Grype via install script")
+                return False
+
+        print("Grype installed successfully!")
+        return True
+
+    except Exception as e:
+        print(f"Error installing Grype: {str(e)}")
+        return False
+
 def main():
     """Main function to install and verify tools."""
     print("Checking and installing required tools...")
@@ -185,6 +264,15 @@ def main():
             print(f"Trivy version: {version.strip()}")
     else:
         print("Failed to install Trivy")
+
+    # Install Grype
+    print("\nChecking Grype...")
+    if install_grype():
+        success, version = run_command(["grype", "version"])
+        if success:
+            print(f"Grype version: {version.strip()}")
+    else:
+        print("Failed to install Grype")
 
 if __name__ == "__main__":
     main()
