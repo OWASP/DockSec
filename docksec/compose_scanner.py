@@ -393,6 +393,8 @@ class ComposeOrchestrator:
         
         dockerfile_outputs = []
         image_outputs = []
+        failed_service_scans = []
+        services_scanned = 0
         all_success = True
         
         for service_name, config in services.items():
@@ -422,6 +424,8 @@ class ComposeOrchestrator:
                     
             if not dockerfile_path and not image_name:
                 continue
+
+            services_scanned += 1
                 
             logger.info(f"Scanning service {service_name} (Dockerfile: {dockerfile_path}, Image: {image_name})")
             
@@ -441,6 +445,11 @@ class ComposeOrchestrator:
                     df_success, df_output = service_scanner.scan_dockerfile()
                     if not df_success:
                         all_success = False
+                        failed_service_scans.append(
+                            self._failed_service_scan(
+                                service_name, "dockerfile", df_output
+                            )
+                        )
                     if df_output:
                         dockerfile_outputs.append(f"--- Service: {service_name} ---\n{df_output}")
                 elif image_name and not dockerfile_path:
@@ -448,6 +457,13 @@ class ComposeOrchestrator:
                     res = service_scanner.run_image_only_scan(severity)
                     if not res['image_scan']['success']:
                         all_success = False
+                        failed_service_scans.append(
+                            self._failed_service_scan(
+                                service_name,
+                                "image",
+                                res['image_scan'].get('output')
+                            )
+                        )
                     if res['image_scan']['output']:
                         image_outputs.append(f"--- Service: {service_name} ---\n{res['image_scan']['output']}")
                     if res.get('json_data'):
@@ -458,8 +474,25 @@ class ComposeOrchestrator:
                 else:
                     # Both
                     res = service_scanner.run_full_scan(severity)
+                    service_failures = []
                     if not res['dockerfile_scan']['success'] or not res['image_scan']['success']:
                         all_success = False
+                    if not res['dockerfile_scan']['success']:
+                        service_failures.append(
+                            "dockerfile: "
+                            f"{self._failure_reason(res['dockerfile_scan'].get('output'))}"
+                        )
+                    if not res['image_scan']['success']:
+                        service_failures.append(
+                            "image: "
+                            f"{self._failure_reason(res['image_scan'].get('output'))}"
+                        )
+                    if service_failures:
+                        failed_service_scans.append(
+                            self._failed_service_scan(
+                                service_name, "service", "; ".join(service_failures)
+                            )
+                        )
                     if res['dockerfile_scan']['output'] and not res['dockerfile_scan'].get('skipped'):
                         dockerfile_outputs.append(f"--- Service: {service_name} ---\n{res['dockerfile_scan']['output']}")
                     if res['image_scan']['output'] and not res['image_scan'].get('skipped'):
@@ -470,6 +503,9 @@ class ComposeOrchestrator:
                         all_findings.extend(res['json_data'])
             except Exception as e:
                 logger.error(f"Failed to scan service {service_name}: {e}")
+                failed_service_scans.append(
+                    self._failed_service_scan(service_name, "service", error=e)
+                )
                 all_success = False
                 
         from datetime import datetime
@@ -488,5 +524,33 @@ class ComposeOrchestrator:
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'image_name': "Multiple Services",
             'dockerfile_path': self.compose_path,
-            'scan_mode': 'compose'
+            'scan_mode': 'compose',
+            'services_scanned': services_scanned,
+            'failed_service_scans': failed_service_scans
         }
+
+    def _failed_service_scan(
+        self,
+        service_name: str,
+        scan_type: str,
+        output: str = None,
+        error: Exception = None
+    ) -> Dict:
+        reason = self._failure_reason(output, error)
+        return {
+            'service': service_name,
+            'scan_type': scan_type,
+            'reason': reason
+        }
+
+    def _failure_reason(self, output: str = None, error: Exception = None) -> str:
+        if error is not None:
+            return str(error) or "scanner exception"
+
+        if output:
+            for line in str(output).splitlines():
+                line = line.strip()
+                if line:
+                    return line
+
+        return "scan failed"

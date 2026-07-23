@@ -652,6 +652,15 @@ def _quick_take_lines(results, counts, run_ai):
 
     vulnerabilities = results.get("json_data", [])
     total_vulns = sum(counts.get(sev, 0) for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"))
+
+    failed_service_scans = results.get("failed_service_scans") or []
+    if failed_service_scans:
+        lines.append(
+            _format_failed_service_scans(
+                failed_service_scans, results.get("services_scanned")
+            )
+        )
+
     if total_vulns:
         crit, high = counts.get("CRITICAL", 0), counts.get("HIGH", 0)
         lines.append(f"{total_vulns} security findings ({crit} critical, {high} high)")
@@ -686,6 +695,31 @@ def _quick_take_lines(results, counts, run_ai):
             lines.append("Run without --scan-only to add AI-powered explanations and fixes")
 
     return lines
+
+
+def _format_failed_service_scans(failed_service_scans, services_scanned=None):
+    total = services_scanned or len(failed_service_scans)
+    names = [item.get("service", "unknown") for item in failed_service_scans]
+    reasons = {item.get("reason") for item in failed_service_scans if item.get("reason")}
+
+    if len(reasons) == 1:
+        reason = next(iter(reasons))
+        return (
+            f"{len(failed_service_scans)} of {total} services could not be scanned "
+            f"({reason}): {', '.join(names)}"
+        )
+
+    details = []
+    for item in failed_service_scans:
+        service = item.get("service", "unknown")
+        scan_type = item.get("scan_type", "scan")
+        reason = item.get("reason") or "scan failed"
+        details.append(f"{service} {scan_type}: {reason}")
+
+    return (
+        f"{len(failed_service_scans)} of {total} service scans could not be completed: "
+        f"{'; '.join(details)}"
+    )
 
 
 def _findings_at_or_above(results, threshold):
