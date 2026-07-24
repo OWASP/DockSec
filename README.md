@@ -318,6 +318,19 @@ By default every scan writes four report files; use `--format` to pick a subset:
 > CSV (column names, no rows) so downstream automation never breaks on a missing or
 > empty file. This is intentional.
 
+### CI/CD Integration
+
+Ready-to-adapt pipeline examples live in `examples/`:
+
+- `examples/github-actions.yml` builds an image, runs the DockSec GitHub Action, uploads generated reports as an artifact, and uploads SARIF to GitHub Code Scanning.
+- `examples/gitlab-ci.yml` runs DockSec from a Docker-in-Docker GitLab job and saves the report directory as a job artifact.
+- `examples/jenkins/Jenkinsfile` builds the image, runs the CLI, and archives the generated reports.
+
+For AI-powered analysis, store your provider key as a CI secret such as
+`OPENAI_API_KEY` and pass it to DockSec through the action input or environment. Use
+`--fail-on`/`fail_on` to choose the minimum severity that should fail the build, and set
+`--output-dir`/`output_dir` to a directory your CI system uploads after the scan.
+
 ### CycloneDX SBOM
 
 `--sbom` writes a CycloneDX software bill of materials (`<image>.cdx.json`) of the
