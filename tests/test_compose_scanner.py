@@ -172,4 +172,5 @@ def test_compose_orchestrator_offline(valid_compose_file, mocker):
     
     assert results['scan_mode'] == 'compose'
     assert results['dockerfile_scan']['success'] is True
-    assert results['image_scan']['success'] is True
+    assert results['image_scan']['success'] is True 
+    assert results["failed_services"] == []
