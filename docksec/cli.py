@@ -31,6 +31,125 @@ def get_version() -> str:
 
     return "unknown"
 
+def _load_project_config(args, output):
+    """Discover, load, and apply the repo-level config file.
+
+    Returns (file_config, config_path). The path is None when no file was used.
+
+    Precedence is enforced by only filling in settings the user left unset: an
+    explicit CLI flag is never overwritten, and env-var-backed settings are
+    applied by writing the environment variable only when it is not already set,
+    so `LLM_PROVIDER=x docksec ...` still beats a committed provider.
+
+    A config file that exists but is invalid exits 2. Unlike the ignore file,
+    where a bad entry is skipped with a warning, a broken policy file must stop
+    the run rather than silently scan under rules the team did not commit.
+    """
+    from docksec.project_config import (
+        ConfigFileError,
+        DocksecFileConfig,
+        find_config_file,
+        load_config_file,
+    )
+
+    # get_config() calls load_dotenv() lazily, which would otherwise populate
+    # the environment *after* the checks below and let the config file win over
+    # a .env entry. Load it up front so env-over-file precedence holds.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:  # python-dotenv is a core dep; tolerate its absence
+        pass
+
+    if args.no_config:
+        return DocksecFileConfig(), None
+
+    if args.config_file:
+        # An explicitly named file that is missing is a usage error; a merely
+        # absent auto-discovered file is not.
+        if not os.path.isfile(args.config_file):
+            output.error(f"Config file not found: {args.config_file}")
+            sys.exit(2)
+        config_path = args.config_file
+    else:
+        config_path = find_config_file()
+        if not config_path:
+            return DocksecFileConfig(), None
+
+    try:
+        file_config, warnings = load_config_file(config_path)
+    except ConfigFileError as exc:
+        output.error(str(exc))
+        sys.exit(2)
+
+    for warning in warnings:
+        output.warn(warning)
+
+    # Settings that reach the rest of the CLI as attributes on `args`.
+    # Severity resolves through get_config().default_severity, which cannot
+    # distinguish "DOCKSEC_DEFAULT_SEVERITY was set" from "built-in default".
+    # Setting the env var here (only when absent) keeps env-over-file ordering
+    # without changing how the rest of the CLI reads the value.
+    if file_config.severity and not os.getenv("DOCKSEC_DEFAULT_SEVERITY"):
+        os.environ["DOCKSEC_DEFAULT_SEVERITY"] = file_config.severity
+
+    for attr, value in (
+        ("fail_on", file_config.fail_on),
+        ("output_dir", file_config.output_dir),
+        ("ignore_file", file_config.ignore_file),
+        ("baseline", file_config.baseline),
+        ("offline", file_config.offline),
+        ("skip_ai_scoring", file_config.skip_ai_scoring),
+        ("no_redact", file_config.no_redact),
+        ("no_cache", file_config.no_cache),
+    ):
+        if value is not None and getattr(args, attr, None) is None:
+            setattr(args, attr, value)
+
+    # --format is parsed from a comma-separated string; the file supplies a list.
+    if file_config.formats is not None and args.format is None:
+        args.format = ",".join(file_config.formats)
+
+    # Provider and model travel via environment variables. Only set them when
+    # the env var is absent, so an explicitly exported value still wins.
+    if file_config.provider and not os.getenv("LLM_PROVIDER"):
+        os.environ["LLM_PROVIDER"] = file_config.provider
+    if file_config.model and not os.getenv("LLM_MODEL"):
+        os.environ["LLM_MODEL"] = file_config.model
+
+    return file_config, config_path
+
+
+def _apply_disabled_rules(results, disabled_rules, output):
+    """Drop findings whose rule ID is disabled in the config file.
+
+    Applied alongside the ignore-file waivers, before scoring, reports, JSON
+    output, and the --fail-on gate, so a disabled rule is invisible everywhere.
+    Matching is case-insensitive on VulnerabilityID, consistent with waivers.
+    """
+    if not disabled_rules or not results.get("json_data"):
+        return 0
+
+    disabled = {rule.lower() for rule in disabled_rules}
+    kept = []
+    removed = 0
+    for finding in results["json_data"]:
+        rule_id = str(finding.get("VulnerabilityID", "")).lower()
+        if rule_id in disabled:
+            removed += 1
+        else:
+            kept.append(finding)
+
+    if removed:
+        results["json_data"] = kept
+        results["disabled_rule_count"] = removed
+        output.info(
+            f"Suppressed {removed} finding(s) from {len(disabled)} disabled rule(s) "
+            f"in the config file"
+        )
+    return removed
+
+
 def main() -> None:
     """
     Main entry point for the DockSec CLI tool.
@@ -62,7 +181,7 @@ def main() -> None:
                        help='LLM provider to use (default: openai, can also set LLM_PROVIDER env var)')
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-haiku-4-5, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
-    parser.add_argument('--skip-ai-scoring', action='store_true', help='Skip AI-based security scoring (use local scoring only)')
+    parser.add_argument('--skip-ai-scoring', action='store_true', default=None, help='Skip AI-based security scoring (use local scoring only)')
     parser.add_argument('--severity', help='Comma-separated severity levels to scan for (default: CRITICAL,HIGH; or set DOCKSEC_DEFAULT_SEVERITY)')
     parser.add_argument('--fail-on', dest='fail_on', metavar='SEVERITY', help='Exit with code 1 if any finding is at or above this severity (CRITICAL, HIGH, MEDIUM, or LOW)')
     parser.add_argument('--format', dest='format', help='Comma-separated report formats to write: json, csv, pdf, html (default: all)')
@@ -70,12 +189,15 @@ def main() -> None:
     parser.add_argument('--json', dest='json_stdout', action='store_true', help='Print scan results as JSON to stdout (no report files unless --format is also given)')
     parser.add_argument('--sarif', dest='sarif', action='store_true', help='Write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools')
     parser.add_argument('--sbom', dest='sbom', action='store_true', help='Write a CycloneDX SBOM (.cdx.json) of the scanned image for supply-chain tooling (requires an image)')
-    parser.add_argument('--offline', dest='offline', action='store_true', help='Run without network access: use the local Trivy DB (no DB update) and skip AI analysis')
-    parser.add_argument('--no-redact', dest='no_redact', action='store_true', help='Do not mask secret-looking values before sending file content to the AI provider')
-    parser.add_argument('--no-cache', dest='no_cache', action='store_true', help='Bypass the scan results cache and force a fresh scan')
+    parser.add_argument('--offline', dest='offline', action='store_true', default=None, help='Run without network access: use the local Trivy DB (no DB update) and skip AI analysis')
+    parser.add_argument('--no-redact', dest='no_redact', action='store_true', default=None, help='Do not mask secret-looking values before sending file content to the AI provider')
+    parser.add_argument('--no-cache', dest='no_cache', action='store_true', default=None, help='Bypass the scan results cache and force a fresh scan')
     parser.add_argument('--ignore-file', dest='ignore_file', metavar='FILE', help='Path to an ignore file listing findings to suppress (default: .docksec-ignore.yml in the current directory, if present)')
     parser.add_argument('--baseline', dest='baseline', metavar='FILE', help='Path to a baseline file; with --fail-on, only findings not present in the baseline trigger the gate')
     parser.add_argument('--update-baseline', dest='update_baseline', action='store_true', help='Write the current scan findings to --baseline instead of gating against it')
+    parser.add_argument('--config', dest='config_file', metavar='FILE', help='Path to a DockSec config file (default: nearest .docksec.yml, searching up to the repository root)')
+    parser.add_argument('--no-config', dest='no_config', action='store_true', help='Ignore any .docksec.yml and use only flags, environment variables, and defaults')
+    parser.add_argument('--print-config-schema', dest='print_config_schema', action='store_true', help='Print the JSON Schema for .docksec.yml to stdout and exit')
     parser.add_argument('--quiet', action='store_true', help='Reduce output to warnings, errors, and the result summary')
     parser.add_argument('-v', '--verbose', action='store_true', help='Show INFO-level log lines on stderr')
     parser.add_argument('--log-file', dest='log_file', metavar='FILE', help='Also append log lines to FILE, creating missing parent directories; combine with --verbose to capture INFO-level logs')
@@ -92,6 +214,21 @@ def main() -> None:
         # NO_COLOR, so set it before those modules are imported.
         os.environ["NO_COLOR"] = "1"
     output.configure(quiet=args.quiet, no_color=no_color, json_mode=args.json_stdout)
+
+    # --print-config-schema is a utility action: emit the schema and exit before
+    # any input validation, so it works from any directory with no arguments.
+    if args.print_config_schema:
+        import json as _json
+        from docksec.project_config import config_json_schema
+        print(_json.dumps(config_json_schema(), indent=2))
+        return
+
+    # Repo-level config file (.docksec.yml). Values here sit below CLI flags and
+    # environment variables: a flag always wins, an env var wins over the file,
+    # and the file wins over the built-in default. Applied before anything reads
+    # the resolved settings below.
+    file_config, config_path = _load_project_config(args, output)
+    disabled_rules = [rule.strip() for rule in file_config.rules.disabled if rule.strip()]
 
     # Set provider and model from CLI args if provided (overrides env vars)
     if args.provider:
@@ -277,6 +414,10 @@ def main() -> None:
     from docksec.enums import LLMProvider
 
     output.banner(get_version(), mode_desc)
+    if config_path:
+        # Surface which committed policy is in force; a silently-applied config
+        # file is a support burden when a scan behaves unexpectedly.
+        output.kv("Config", os.path.relpath(config_path))
     output.kv("Reports", output_dir)
     if run_scan:
         output.kv("Severity", severity)
@@ -430,6 +571,11 @@ def main() -> None:
                     output.info(
                         f"{suppressed_count} finding(s) suppressed by ignore file {ignore_path}"
                     )
+
+            # Rules disabled in the config file are dropped before scoring, so a
+            # rule a team has switched off cannot influence the score, reports,
+            # --json, or the --fail-on gate.
+            _apply_disabled_rules(results, disabled_rules, output)
 
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)

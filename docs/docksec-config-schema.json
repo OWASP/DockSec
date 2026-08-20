@@ -1,0 +1,191 @@
+{
+  "$defs": {
+    "RulesConfig": {
+      "additionalProperties": false,
+      "description": "Per-rule controls.\n\n``disabled`` lists rule IDs (compose rule IDs such as\n``compose-missing-healthcheck``, or vulnerability IDs) that should be\ndropped from the results before scoring, reporting, and the --fail-on gate.\nThis is the blunt, permanent instrument; ``.docksec-ignore.yml`` remains the\nright tool for auditable, per-finding waivers with a reason and an expiry.",
+      "properties": {
+        "disabled": {
+          "description": "Rule IDs to disable entirely (compose rule IDs or vulnerability IDs).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Disabled",
+          "type": "array"
+        }
+      },
+      "title": "RulesConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Repo-level configuration for DockSec (.docksec.yml). CLI flags and environment variables override these settings.",
+  "properties": {
+    "severity": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Comma-separated severity levels to scan for, e.g. 'CRITICAL,HIGH'.",
+      "title": "Severity"
+    },
+    "fail_on": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Exit 1 if any finding is at or above this severity.",
+      "title": "Fail On"
+    },
+    "formats": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Report formats to write. Any of: json, csv, pdf, html.",
+      "title": "Formats"
+    },
+    "output_dir": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Directory to write reports to.",
+      "title": "Output Dir"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "LLM provider for the AI analysis pass.",
+      "title": "Provider"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Model name for the configured provider.",
+      "title": "Model"
+    },
+    "offline": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Run without network access; skips the AI pass and Docker Scout.",
+      "title": "Offline"
+    },
+    "skip_ai_scoring": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Use local scoring only, without an LLM scoring call.",
+      "title": "Skip Ai Scoring"
+    },
+    "no_redact": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Do not mask secret-looking values before the AI call.",
+      "title": "No Redact"
+    },
+    "no_cache": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Bypass the scan results cache.",
+      "title": "No Cache"
+    },
+    "ignore_file": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Path to a waiver file listing findings to suppress.",
+      "title": "Ignore File"
+    },
+    "baseline": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Path to a baseline file for ratchet mode.",
+      "title": "Baseline"
+    },
+    "rules": {
+      "$ref": "#/$defs/RulesConfig",
+      "description": "Per-rule controls."
+    }
+  },
+  "title": "DockSec configuration",
+  "type": "object",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://owasp.org/DockSec/docksec-config-schema.json"
+}
