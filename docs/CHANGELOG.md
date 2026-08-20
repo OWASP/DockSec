@@ -5,6 +5,25 @@ All notable changes to DockSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.8.19] - 2026-08-19
+
+### Added
+
+- **Repo-level configuration file (`.docksec.yml`)**: a committed policy file for severity, `fail_on`, report formats, output directory, provider/model, waiver and baseline paths, and disabled rules, so a team's scan policy lives in the repository instead of in per-developer flags and environment variables. Discovery starts in the working directory and walks up to the repository root (stopping at the directory containing `.git`), so a service in a monorepo subdirectory inherits the policy committed at the top level. Precedence is CLI flag > environment variable > `.docksec.yml` > built-in default, so committed policy never overrides an explicit flag or an exported variable. The config file in force is shown in the scan banner.
+- **`--config FILE` and `--no-config`**: use a specific config file, or skip discovery entirely for reproducible CI runs.
+- **Per-rule disabling (`rules.disabled`)**: switches individual rules off before scoring, reports, `--json`, and the `--fail-on` gate, so a disabled rule cannot influence the security score. Matching is case-insensitive on the rule ID. The waiver file (`.docksec-ignore.yml`) remains the right tool for individual triaged findings, since its entries carry a reason and an expiry date.
+- **`--print-config-schema`**: emits a JSON Schema for the config file, committed at `docs/docksec-config-schema.json`. The `# yaml-language-server:` comment in the example config enables autocomplete and inline validation in VS Code and JetBrains editors.
+- **Annotated example config** at `examples/.docksec.yml`.
+
+### Changed
+
+- `--offline`, `--no-cache`, `--no-redact`, and `--skip-ai-scoring` now default to `None` rather than `False` internally, so an absent flag is distinguishable from an explicit `false` and no longer overrides a value set in the config file. Behavior is unchanged when no config file is present.
+
+### Fixed
+
+- **Invalid config files fail loudly**: a config file that exists but cannot be used as written (unknown key, invalid severity or provider value, malformed YAML) exits `2` with the offending key and file path named, rather than warning and continuing. This is deliberately stricter than the ignore file, where a malformed entry is skipped with a warning: a broken policy file must not silently scan under rules the team did not commit.
+- **Lint rule set pinned**: `[tool.ruff.lint] select` in `pyproject.toml` now fixes the enabled rules instead of inheriting ruff's defaults, which change between releases. Ruff 0.16 enabled several new rule groups by default and failed CI on every pull request without any code change.
+
 ## [Unreleased]
 
 ### Added

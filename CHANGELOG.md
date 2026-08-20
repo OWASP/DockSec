@@ -2,7 +2,10 @@
 
 All notable changes to DockSec are documented in this file.
 
-## Unreleased
+## 2026.8.19
+
+Adds a committed configuration file so a team's scan policy lives in the repository
+instead of in per-developer flags and environment variables.
 
 ### Added
 
@@ -26,6 +29,19 @@ All notable changes to DockSec are documented in this file.
 A config file that exists but is invalid (unknown key, bad severity value) exits `2`
 with the offending key named, rather than warning and continuing - a broken policy
 file must not silently scan under rules the team did not commit.
+
+### Changed
+
+- `--offline`, `--no-cache`, `--no-redact`, and `--skip-ai-scoring` now default to
+  `None` rather than `False` internally, so an absent flag is distinguishable from an
+  explicit `false` and no longer overrides a config file value. Behavior is unchanged
+  when no config file is present.
+
+### Fixed
+
+- Lint rules are now pinned in `pyproject.toml` (`[tool.ruff.lint] select`) instead of
+  inheriting ruff's defaults. Ruff 0.16 enabled several new rule groups by default,
+  which failed CI on every pull request without any code change.
 
 ## 2026.7.5
 

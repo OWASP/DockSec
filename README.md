@@ -138,7 +138,7 @@ API keys, private key blocks) are masked automatically. See
 
 ```yaml
 - name: Run DockSec AI Scanner
-  uses: OWASP/DockSec@v2026.7.5
+  uses: OWASP/DockSec@v2026.8.19
   with:
     dockerfile: 'Dockerfile'
     openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -329,7 +329,7 @@ directly on pull requests and in the Security tab:
 
 ```yaml
 - name: Run DockSec
-  uses: OWASP/DockSec@v2026.7.5
+  uses: OWASP/DockSec@v2026.8.19
   with:
     dockerfile: 'Dockerfile'
     sarif: 'true'
