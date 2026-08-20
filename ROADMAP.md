@@ -13,9 +13,6 @@ moves to the [CHANGELOG](CHANGELOG.md).
 - **Registry / remote image scanning.** Scan images in a registry (Artifactory, Harbor,
   ECR, Docker Hub) without a local Docker daemon, using Trivy's remote scanning and the
   standard registry auth environment variables. Unblocks daemonless CI runners.
-- **Repo-level configuration file.** A committed `.docksec.yml` for severity, fail-on
-  threshold, report formats, output directory, disabled rules, and provider settings,
-  so a team's policy lives in the repo instead of per-developer flags.
 - **Dockerfile lint findings as first-class findings.** Parse Hadolint output into
   structured findings with mapped severities so they participate in `--fail-on`,
   `--json`, SARIF, and the reports like image vulnerabilities already do.
@@ -46,6 +43,8 @@ moves to the [CHANGELOG](CHANGELOG.md).
 
 ## Recently shipped
 
-See the [CHANGELOG](CHANGELOG.md). Highlights from 2026.7.4/2026.7.5: secret redaction
-before AI analysis, auditable waiver files, digest-keyed scan caching with TTL, a slim
-scan-only install, tuned compose rules, and an overhauled HTML report.
+See the [CHANGELOG](CHANGELOG.md). Most recently: a repo-level `.docksec.yml`
+configuration file with a published JSON Schema, so a team's scan policy lives in the
+repository instead of in per-developer flags. Highlights from 2026.7.4/2026.7.5: secret
+redaction before AI analysis, auditable waiver files, digest-keyed scan caching with TTL,
+a slim scan-only install, tuned compose rules, and an overhauled HTML report.

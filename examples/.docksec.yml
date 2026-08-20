@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://owasp.org/DockSec/docksec-config-schema.json
+#
+# DockSec repo-level configuration.
+#
+# Commit this file at the root of your repository so the whole team - and CI -
+# scans under the same policy. Every setting is optional; anything you leave out
+# falls back to the environment variable, then to the built-in default.
+#
+# Precedence, highest first:
+#   CLI flag  >  environment variable  >  this file  >  default
+#
+# The schema comment on the first line gives you completion and inline
+# validation in VS Code and JetBrains editors.
+
+# Severity levels included in the image vulnerability scan.
+# Valid: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+severity: CRITICAL,HIGH
+
+# Fail the build (exit 1) when a finding at or above this level is present.
+# Valid: CRITICAL, HIGH, MEDIUM, LOW
+fail_on: HIGH
+
+# Report formats to write. Any of: json, csv, pdf, html
+formats:
+  - json
+  - html
+
+# Where reports are written.
+output_dir: ./security-reports
+
+# LLM provider and model for the AI analysis pass.
+# Valid providers: openai, anthropic, google, ollama
+# Use ollama to keep analysis entirely on your own machine.
+# provider: anthropic
+# model: claude-haiku-4-5
+
+# Run with no network access: use the local Trivy database and skip both the
+# AI pass and Docker Scout.
+# offline: false
+
+# Score locally instead of asking the model for a score.
+# skip_ai_scoring: false
+
+# Send file content to the AI provider without masking secret-looking values.
+# Leave this off unless you have a specific reason.
+# no_redact: false
+
+# Bypass the scan results cache on every run.
+# no_cache: false
+
+# Waiver file: individual findings your team has triaged and accepted, each
+# with a reason and an optional expiry date.
+# ignore_file: .docksec-ignore.yml
+
+# Baseline file for ratchet mode: with fail_on set, only findings introduced
+# after the baseline was captured trip the gate.
+# baseline: .docksec-baseline.json
+
+# Rules to switch off entirely. Use this for checks that do not apply to your
+# environment; prefer the waiver file above for individual findings you have
+# accepted, since those carry a reason and an expiry.
+# rules:
+#   disabled:
+#     - compose-missing-healthcheck
+#     - compose-no-resource-limits
