@@ -194,6 +194,8 @@ SESSION_SUMMARY.md
 CURSOR_CONFIGURATION.md
 
 # Internal/maintainer documentation (not for public repository)
+docs/promptfoo-benchmark-review.md
+ROADMAP.md
 
 # Claude Code project instructions (local only, not for public repository)
 CLAUDE.md

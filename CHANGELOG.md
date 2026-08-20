@@ -2,6 +2,47 @@
 
 All notable changes to DockSec are documented in this file.
 
+## 2026.8.19
+
+Adds a committed configuration file so a team's scan policy lives in the repository
+instead of in per-developer flags and environment variables.
+
+### Added
+
+- Repo-level configuration file (`.docksec.yml`): commit scan policy - severity,
+  `fail_on`, report formats, output directory, provider/model, waiver and baseline
+  paths, and disabled rules - to the repository instead of passing per-developer
+  flags. Discovery starts in the working directory and walks up to the repository
+  root, so a monorepo subdirectory inherits the policy committed at the top level.
+- Precedence is CLI flag > environment variable > `.docksec.yml` > built-in default,
+  so committed policy never overrides an explicit flag or an exported variable.
+- `--config FILE` to use a specific config file, and `--no-config` to ignore config
+  discovery entirely for reproducible CI runs.
+- `rules.disabled` in the config file switches individual rules off before scoring,
+  reports, `--json`, and the `--fail-on` gate. The waiver file remains the right tool
+  for individual findings, since its entries carry a reason and an expiry date.
+- `--print-config-schema` emits the JSON Schema for the config file. The schema is
+  committed at `docs/docksec-config-schema.json`, and the `# yaml-language-server:`
+  comment in the example config enables editor autocomplete and inline validation.
+- An annotated example config at `examples/.docksec.yml`.
+
+A config file that exists but is invalid (unknown key, bad severity value) exits `2`
+with the offending key named, rather than warning and continuing - a broken policy
+file must not silently scan under rules the team did not commit.
+
+### Changed
+
+- `--offline`, `--no-cache`, `--no-redact`, and `--skip-ai-scoring` now default to
+  `None` rather than `False` internally, so an absent flag is distinguishable from an
+  explicit `false` and no longer overrides a config file value. Behavior is unchanged
+  when no config file is present.
+
+### Fixed
+
+- Lint rules are now pinned in `pyproject.toml` (`[tool.ruff.lint] select`) instead of
+  inheriting ruff's defaults. Ruff 0.16 enabled several new rule groups by default,
+  which failed CI on every pull request without any code change.
+
 ## 2026.7.5
 
 ### Fixed
