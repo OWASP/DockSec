@@ -2,10 +2,12 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import pytest
+from pydantic import ValidationError
 
 from docksec.project_config import (
     ConfigFileError,
@@ -19,6 +21,17 @@ from docksec.project_config import (
 def write(path, text):
     path.write_text(text, encoding="utf-8")
     return str(path)
+
+
+# The end-to-end tests below drive the real CLI, which refuses to start when its
+# external scanners are missing. Not every environment installs them (the
+# coverage workflow, for instance, does not), so those tests skip rather than
+# fail there. The config-file logic itself is covered without them by
+# TestMergeIntoArgs and the schema/discovery tests.
+requires_scan_tools = pytest.mark.skipif(
+    not (shutil.which("trivy") and shutil.which("hadolint")),
+    reason="requires trivy and hadolint on PATH",
+)
 
 
 class TestSchemaValidation:
@@ -60,17 +73,17 @@ class TestSchemaValidation:
         ],
     )
     def test_invalid_values_are_rejected(self, kwargs):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DocksecFileConfig(**kwargs)
 
     def test_unknown_key_is_rejected(self):
         """extra=forbid turns a typo into an error instead of a silently
         ignored setting."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DocksecFileConfig(severty="HIGH")
 
     def test_unknown_nested_rules_key_is_rejected(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DocksecFileConfig(rules={"disabeld": ["x"]})
 
 
@@ -195,11 +208,11 @@ class TestMergeIntoArgs:
     def blank_args(**overrides):
         import argparse
 
-        defaults = dict(
-            no_config=False, config_file=None, severity=None, fail_on=None,
-            output_dir=None, ignore_file=None, baseline=None, offline=None,
-            skip_ai_scoring=None, no_redact=None, no_cache=None, format=None,
-        )
+        defaults = {
+            "no_config": False, "config_file": None, "severity": None, "fail_on": None,
+            "output_dir": None, "ignore_file": None, "baseline": None, "offline": None,
+            "skip_ai_scoring": None, "no_redact": None, "no_cache": None, "format": None,
+        }
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
 
@@ -294,6 +307,7 @@ class TestCliIntegration:
             text=True,
             env=full_env,
             timeout=120,
+            check=False,  # these tests assert on non-zero exit codes
         )
 
     @pytest.fixture
@@ -349,6 +363,7 @@ class TestCliIntegration:
         assert result.returncode == 0
         assert json.loads(result.stdout)["properties"]["severity"]
 
+    @requires_scan_tools
     def test_disabled_rules_are_dropped_everywhere(self, project):
         """A disabled rule must not reach --json, and by extension not the
         score, the reports, or the --fail-on gate."""
@@ -379,6 +394,7 @@ class TestCliIntegration:
         assert "compose-no-resource-limits" not in ids_after
         assert ids_after < ids_before
 
+    @requires_scan_tools
     def test_disabled_rule_matching_is_case_insensitive(self, project):
         compose = project / "docker-compose.yml"
         compose.write_text(

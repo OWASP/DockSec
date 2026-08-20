@@ -45,7 +45,6 @@ wrong severity while the team believes their committed policy is in force.
 """
 
 import os
-from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -70,7 +69,7 @@ class RulesConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    disabled: List[str] = Field(
+    disabled: list[str] = Field(
         default_factory=list,
         description="Rule IDs to disable entirely (compose rule IDs or vulnerability IDs).",
     )
@@ -87,51 +86,51 @@ class DocksecFileConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    severity: Optional[str] = Field(
+    severity: str | None = Field(
         default=None,
         description="Comma-separated severity levels to scan for, e.g. 'CRITICAL,HIGH'.",
     )
-    fail_on: Optional[str] = Field(
+    fail_on: str | None = Field(
         default=None,
         description="Exit 1 if any finding is at or above this severity.",
     )
-    formats: Optional[List[str]] = Field(
+    formats: list[str] | None = Field(
         default=None,
         description="Report formats to write. Any of: json, csv, pdf, html.",
     )
-    output_dir: Optional[str] = Field(
+    output_dir: str | None = Field(
         default=None,
         description="Directory to write reports to.",
     )
-    provider: Optional[str] = Field(
+    provider: str | None = Field(
         default=None,
         description="LLM provider for the AI analysis pass.",
     )
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="Model name for the configured provider.",
     )
-    offline: Optional[bool] = Field(
+    offline: bool | None = Field(
         default=None,
         description="Run without network access; skips the AI pass and Docker Scout.",
     )
-    skip_ai_scoring: Optional[bool] = Field(
+    skip_ai_scoring: bool | None = Field(
         default=None,
         description="Use local scoring only, without an LLM scoring call.",
     )
-    no_redact: Optional[bool] = Field(
+    no_redact: bool | None = Field(
         default=None,
         description="Do not mask secret-looking values before the AI call.",
     )
-    no_cache: Optional[bool] = Field(
+    no_cache: bool | None = Field(
         default=None,
         description="Bypass the scan results cache.",
     )
-    ignore_file: Optional[str] = Field(
+    ignore_file: str | None = Field(
         default=None,
         description="Path to a waiver file listing findings to suppress.",
     )
-    baseline: Optional[str] = Field(
+    baseline: str | None = Field(
         default=None,
         description="Path to a baseline file for ratchet mode.",
     )
@@ -142,7 +141,7 @@ class DocksecFileConfig(BaseModel):
 
     @field_validator("severity")
     @classmethod
-    def _check_severity(cls, value: Optional[str]) -> Optional[str]:
+    def _check_severity(cls, value: str | None) -> str | None:
         if value is None:
             return None
         levels = [item.strip().upper() for item in value.split(",") if item.strip()]
@@ -156,7 +155,7 @@ class DocksecFileConfig(BaseModel):
 
     @field_validator("fail_on")
     @classmethod
-    def _check_fail_on(cls, value: Optional[str]) -> Optional[str]:
+    def _check_fail_on(cls, value: str | None) -> str | None:
         if value is None:
             return None
         level = value.strip().upper()
@@ -169,7 +168,7 @@ class DocksecFileConfig(BaseModel):
 
     @field_validator("formats")
     @classmethod
-    def _check_formats(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+    def _check_formats(cls, value: list[str] | None) -> list[str] | None:
         if value is None:
             return None
         requested = [item.strip().lower() for item in value if str(item).strip()]
@@ -184,7 +183,7 @@ class DocksecFileConfig(BaseModel):
 
     @field_validator("provider")
     @classmethod
-    def _check_provider(cls, value: Optional[str]) -> Optional[str]:
+    def _check_provider(cls, value: str | None) -> str | None:
         if value is None:
             return None
         provider = value.strip().lower()
@@ -200,7 +199,7 @@ class ConfigFileError(Exception):
     """Raised when a config file exists but cannot be used as written."""
 
 
-def find_config_file(start_dir: Optional[str] = None) -> Optional[str]:
+def find_config_file(start_dir: str | None = None) -> str | None:
     """Find the nearest .docksec.yml, walking up toward the repository root.
 
     Searching upward means a monorepo subdirectory inherits the policy committed
@@ -226,7 +225,7 @@ def find_config_file(start_dir: Optional[str] = None) -> Optional[str]:
         current = parent
 
 
-def load_config_file(path: str) -> Tuple[DocksecFileConfig, List[str]]:
+def load_config_file(path: str) -> tuple[DocksecFileConfig, list[str]]:
     """Load and validate a config file.
 
     Returns ``(config, warnings)``. Raises :class:`ConfigFileError` when the
@@ -236,17 +235,20 @@ def load_config_file(path: str) -> Tuple[DocksecFileConfig, List[str]]:
     """
     from ruamel.yaml import YAML
 
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = YAML(typ="safe").load(handle)
     except FileNotFoundError:
-        raise ConfigFileError(f"Config file not found: {path}")
+        raise ConfigFileError(f"Config file not found: {path}") from None
     except OSError as exc:
-        raise ConfigFileError(f"Could not read config file {path}: {exc}")
+        raise ConfigFileError(f"Could not read config file {path}: {exc}") from exc
     except Exception as exc:
-        raise ConfigFileError(f"Could not parse config file {path}: {exc}")
+        # ruamel raises several unrelated parser/scanner/composer error types for
+        # malformed YAML; all mean the same thing to the user, so they collapse
+        # into one message.
+        raise ConfigFileError(f"Could not parse config file {path}: {exc}") from exc
 
     # An empty file is valid and means "no overrides".
     if data is None:
@@ -279,7 +281,7 @@ def _format_validation_error(path: str, exc: ValidationError) -> str:
     return "\n".join(lines)
 
 
-def config_json_schema() -> Dict:
+def config_json_schema() -> dict:
     """Return the JSON Schema for .docksec.yml.
 
     Exported by ``docksec --print-config-schema`` and committed to
