@@ -204,6 +204,92 @@ docksec Dockerfile --no-color                           # also honors NO_COLOR
 
 ---
 
+## Configuration file
+
+Commit a `.docksec.yml` at the root of your repository and the whole team - and
+every CI job - scans under the same policy, instead of each developer passing
+their own flags.
+
+```yaml
+# yaml-language-server: $schema=https://owasp.org/DockSec/docksec-config-schema.json
+severity: CRITICAL,HIGH
+fail_on: HIGH
+formats: [json, html]
+output_dir: ./security-reports
+
+rules:
+  disabled:
+    - compose-missing-healthcheck
+```
+
+Every setting is optional; anything you leave out falls back to the environment
+variable and then to the built-in default. A full annotated example is in
+[`examples/.docksec.yml`](examples/.docksec.yml).
+
+### Precedence
+
+Highest priority first:
+
+```
+CLI flag  >  environment variable  >  .docksec.yml  >  built-in default
+```
+
+So a committed `severity: LOW` is still overridden by `--severity CRITICAL` on
+the command line, and by `DOCKSEC_DEFAULT_SEVERITY` in the environment.
+
+### Discovery
+
+DockSec looks for `.docksec.yml` (or `.docksec.yaml`) in the working directory
+and then walks up to the repository root, so a service in a monorepo
+subdirectory inherits the policy committed at the top level. The search stops at
+the directory containing `.git`, so it never picks up a file from outside the
+repository.
+
+- `--config FILE` uses a specific file instead of searching.
+- `--no-config` ignores any config file, for reproducible CI runs.
+
+The config file in force is shown in the scan banner, so it is always clear
+which policy was applied.
+
+### Settings
+
+| Setting | Equivalent flag | Notes |
+| --- | --- | --- |
+| `severity` | `--severity` | Severity levels for the image scan |
+| `fail_on` | `--fail-on` | CI gate threshold |
+| `formats` | `--format` | List form: `[json, html]` |
+| `output_dir` | `--output-dir` | Report destination |
+| `provider` | `--provider` | `openai`, `anthropic`, `google`, `ollama` |
+| `model` | `--model` | Model name for the provider |
+| `offline` | `--offline` | No network; skips AI and Docker Scout |
+| `skip_ai_scoring` | `--skip-ai-scoring` | Local scoring only |
+| `no_redact` | `--no-redact` | Do not mask secrets before the AI call |
+| `no_cache` | `--no-cache` | Bypass the scan cache |
+| `ignore_file` | `--ignore-file` | Waiver file path |
+| `baseline` | `--baseline` | Baseline file path |
+| `rules.disabled` | - | Rule IDs to switch off entirely |
+
+An invalid config file - an unknown key, a bad severity - is a hard error that
+exits `2` rather than a warning, so a broken policy file can never cause a scan
+to run under rules the team did not commit.
+
+### Editor autocomplete
+
+The `# yaml-language-server:` comment on the first line gives completion and
+inline validation in VS Code and JetBrains editors. The schema is published at
+[`docs/docksec-config-schema.json`](docs/docksec-config-schema.json) and can be
+regenerated with `docksec --print-config-schema`.
+
+### Disabling rules
+
+`rules.disabled` switches a check off entirely, everywhere - it is removed
+before scoring, reports, `--json`, and the `--fail-on` gate. Use it for checks
+that do not apply to your environment. For individual findings your team has
+triaged and accepted, prefer the [waiver file](#ignoring-findings-waivers),
+whose entries carry a reason and an expiry date and so stay auditable.
+
+---
+
 ## CI/CD Integration
 
 ### Exit codes
