@@ -174,3 +174,46 @@ def test_compose_orchestrator_offline(valid_compose_file, mocker):
     assert results['dockerfile_scan']['success'] is True
     assert results['image_scan']['success'] is True 
     assert results["failed_services"] == []
+
+def test_compose_orchestrator_reports_total_services(valid_compose_file, mocker):
+    mock_scanner = mocker.patch('docksec.compose_scanner.DockerSecurityScanner')
+    mock_instance = mock_scanner.return_value
+    mock_instance.run_image_only_scan.return_value = {
+        'image_scan': {'success': True, 'output': 'Mock output'},
+        'json_data': []
+    }
+
+    orchestrator = ComposeOrchestrator(valid_compose_file, scan_only=True)
+    results = orchestrator.run_full_scan()
+
+    # The quick take renders "N of M services could not be scanned", so the
+    # denominator has to travel with failed_services.
+    assert results['total_services'] == 2
+    assert results['failed_services'] == []
+
+
+def test_compose_orchestrator_records_failed_services(valid_compose_file, mocker):
+    mock_scanner = mocker.patch('docksec.compose_scanner.DockerSecurityScanner')
+    mock_instance = mock_scanner.return_value
+    mock_instance.run_image_only_scan.return_value = {
+        'image_scan': {'success': False, 'output': 'image not found locally'},
+        'json_data': []
+    }
+
+    orchestrator = ComposeOrchestrator(valid_compose_file, scan_only=True)
+    results = orchestrator.run_full_scan()
+
+    assert results['total_services'] == 2
+    failed = {entry['service'] for entry in results['failed_services']}
+    assert failed == {'web', 'db'}
+
+
+def test_compose_orchestrator_unparseable_file_reports_zero_services(tmp_path):
+    bad = tmp_path / "docker-compose.yml"
+    bad.write_text("services: [this is not a mapping")
+
+    orchestrator = ComposeOrchestrator(str(bad), scan_only=True)
+    results = orchestrator.run_full_scan()
+
+    assert results['failed_services'] == []
+    assert results['total_services'] == 0

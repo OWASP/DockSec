@@ -767,6 +767,9 @@ def _print_json_results(results, scanner, report_paths):
     if results.get("suppressed_count"):
         payload["scan_info"]["suppressed_count"] = results["suppressed_count"]
         payload["scan_info"]["ignore_file"] = results.get("ignore_file")
+    if results.get("failed_services"):
+        payload["scan_info"]["failed_services"] = results["failed_services"]
+        payload["scan_info"]["total_services"] = results.get("total_services")
     if "ai_findings" in results:
         payload["ai_analysis"] = results["ai_findings"]
     if report_paths:
@@ -790,6 +793,23 @@ def _render_scan_summary(output, args, scanner, results, report_paths,
     if report_paths:
         output.report_results(report_paths, scanner.RESULTS_DIR)
     output.next_command(_suggest_next_command(args, results, run_ai, run_compose_analysis))
+
+
+def _failed_service_names(failed_services):
+    """Return the distinct service names in ``failed_services``, in order.
+
+    A service that fails both its Dockerfile and its image scan is recorded
+    once per scan, so de-duplicate before counting.
+    """
+    names = []
+    for entry in failed_services or []:
+        name = entry.get("service") if isinstance(entry, dict) else entry
+        if not name:
+            continue
+        name = str(name)
+        if name not in names:
+            names.append(name)
+    return names
 
 
 def _quick_take_lines(results, counts, run_ai):
@@ -824,6 +844,17 @@ def _quick_take_lines(results, counts, run_ai):
     suppressed = results.get("suppressed_count")
     if suppressed:
         lines.append(f"{suppressed} triaged finding(s) suppressed via ignore file")
+
+    # A compose service whose scan failed still leaves the run with a score, so
+    # say so here: otherwise the summary reads as if every service was covered.
+    failed_names = _failed_service_names(results.get("failed_services"))
+    if failed_names:
+        names = ", ".join(failed_names)
+        total = results.get("total_services")
+        if isinstance(total, int) and total > 0:
+            lines.append(f"{len(failed_names)} of {total} services could not be scanned: {names}")
+        else:
+            lines.append(f"{len(failed_names)} service(s) could not be scanned: {names}")
 
     if not run_ai and not results.get("ai_findings"):
         if results.get("scan_mode") == "image_only":
