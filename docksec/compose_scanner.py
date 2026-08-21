@@ -384,7 +384,8 @@ class ComposeOrchestrator:
                 'image_name': "N/A",
                 'dockerfile_path': self.compose_path,
                 'scan_mode': 'compose',
-                'failed_services': []
+                'failed_services': [],
+                'total_services': 0
             }
             
         compose_findings = self.scanner.scan()
@@ -516,5 +517,6 @@ class ComposeOrchestrator:
             'image_name': "Multiple Services",
             'dockerfile_path': self.compose_path,
             'scan_mode': 'compose',
-            'failed_services': failed_services
+            'failed_services': failed_services,
+            'total_services': len(services)
         }

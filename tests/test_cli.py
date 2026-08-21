@@ -415,6 +415,68 @@ class TestCLIHelpers(unittest.TestCase):
         lines = _quick_take_lines(results, counts, run_ai=True)
         self.assertTrue(any("4 triaged finding(s) suppressed" in line for line in lines))
 
+    def test_quick_take_reports_failed_compose_services(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {
+            "dockerfile_scan": {"skipped": True},
+            "scan_mode": "compose",
+            "total_services": 3,
+            "failed_services": [
+                {"service": "web", "reason": "Image scan failed"},
+                {"service": "db", "reason": "Image scan failed"},
+            ],
+        }
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        self.assertTrue(
+            any("2 of 3 services could not be scanned: web, db" in line for line in lines)
+        )
+
+    def test_quick_take_counts_a_doubly_failed_service_once(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {
+            "dockerfile_scan": {"skipped": True},
+            "scan_mode": "compose",
+            "total_services": 2,
+            "failed_services": [
+                {"service": "web", "reason": "Dockerfile scan failed"},
+                {"service": "web", "reason": "Image scan failed"},
+            ],
+        }
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        self.assertTrue(
+            any("1 of 2 services could not be scanned: web" in line for line in lines)
+        )
+
+    def test_quick_take_reports_failures_without_a_service_total(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {
+            "dockerfile_scan": {"skipped": True},
+            "failed_services": [{"service": "web", "reason": "boom"}],
+        }
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        self.assertTrue(
+            any("1 service(s) could not be scanned: web" in line for line in lines)
+        )
+
+    def test_quick_take_stays_silent_when_every_service_scanned(self):
+        from docksec.cli import _quick_take_lines
+
+        results = {
+            "dockerfile_scan": {"skipped": True},
+            "scan_mode": "compose",
+            "total_services": 3,
+            "failed_services": [],
+        }
+        counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        lines = _quick_take_lines(results, counts, run_ai=True)
+        self.assertFalse(any("could not be scanned" in line for line in lines))
+
     def test_suggest_next_command_recommends_image_scan(self):
         from docksec.cli import _suggest_next_command
 
