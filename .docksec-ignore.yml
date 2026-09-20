@@ -1,0 +1,23 @@
+# Findings DockSec accepts in its own Dockerfile.
+#
+# This file exists partly because the self-scan workflow gates the build on
+# DockSec's own output, and partly as a worked example: every entry carries the
+# reason it was accepted and a date to revisit it.
+
+ignores:
+  - id: DS002
+    reason: >-
+      The image runs as root deliberately. It backs the GitHub Action, which
+      mounts the caller's repository at /github/workspace with an ownership the
+      image cannot predict - on Linux runners that is the runner's uid, not
+      ours. A fixed non-root UID in the image cannot write reports into that
+      mount, which is a common and confusing Action failure. Revisit if the
+      Action gains an explicit user input, or if reports move somewhere the
+      container owns.
+    expires: 2027-06-30
+
+  - id: DL3002
+    reason: >-
+      Hadolint's equivalent of DS002; same reasoning. Listed separately because
+      either scanner may be the one that reports it.
+    expires: 2027-06-30

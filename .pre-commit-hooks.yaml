@@ -1,0 +1,36 @@
+# Pre-commit hook definitions.
+#
+# Consumers add DockSec to their .pre-commit-config.yaml; see docs/ci/pre-commit.md.
+#
+# The default hook is scan-only and gates on CRITICAL. A pre-commit hook that is
+# slow or noisy gets bypassed with --no-verify, at which point it protects
+# nothing, so the default bar is deliberately low and the scan is local.
+
+- id: docksec
+  name: DockSec (Dockerfile security scan)
+  description: Scan Dockerfiles for security misconfigurations and exposed secrets
+  entry: docksec
+  language: python
+  files: '(^|/)(Dockerfile|Containerfile)([.-].*)?$'
+  args: ['--scan-only', '--quiet', '--fail-on', 'critical']
+  pass_filenames: true
+  require_serial: true
+
+- id: docksec-strict
+  name: DockSec (strict, fails on HIGH)
+  description: Scan Dockerfiles and fail the commit on HIGH-or-worse findings
+  entry: docksec
+  language: python
+  files: '(^|/)(Dockerfile|Containerfile)([.-].*)?$'
+  args: ['--scan-only', '--quiet', '--fail-on', 'high']
+  pass_filenames: true
+  require_serial: true
+
+# No compose hook ships here, deliberately. A compose scan pulls each service's
+# image to scan it, and on a developer machine those images are usually absent -
+# which DockSec correctly reports as an incomplete scan (exit 3), even for a
+# stack with no findings. A hook that fails on clean input gets bypassed with
+# --no-verify, at which point it protects nothing.
+#
+# Compose scanning belongs in CI, where the images are built. See
+# docs/ci/ for Jenkins, GitLab, and Azure Pipelines examples.

@@ -27,16 +27,13 @@ class TestIntegration(unittest.TestCase):
             shutil.rmtree(self.test_dir)
     
     @patch('docksec.docker_scanner.subprocess.run')
-    @patch('docksec.docker_scanner.get_llm')
     @patch('docksec.config.get_openai_api_key')
-    def test_full_scan_workflow(self, mock_api_key, mock_llm, mock_subprocess):
+    def test_full_scan_workflow(self, mock_api_key, mock_subprocess):
         """Test complete scanning workflow."""
         # Mock API key
         mock_api_key.return_value = "test-api-key"
         
         # Mock LLM responses
-        mock_llm_instance = Mock()
-        mock_llm.return_value = mock_llm_instance
         
         # Mock all subprocess calls
         def subprocess_side_effect(*args, **kwargs):
@@ -61,16 +58,13 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(scanner.image_name, "test:latest")
     
     @patch('docksec.docker_scanner.subprocess.run')
-    @patch('docksec.docker_scanner.get_llm')
     @patch('docksec.config.get_openai_api_key')
-    def test_image_only_scan(self, mock_api_key, mock_llm, mock_subprocess):
+    def test_image_only_scan(self, mock_api_key, mock_subprocess):
         """Test image-only scanning without Dockerfile."""
         # Mock API key
         mock_api_key.return_value = "test-api-key"
         
         # Mock LLM
-        mock_llm_instance = Mock()
-        mock_llm.return_value = mock_llm_instance
         
         # Mock subprocess calls
         def subprocess_side_effect(*args, **kwargs):

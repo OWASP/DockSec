@@ -219,6 +219,269 @@ def fix_commands(commands: Iterable[str]) -> None:
         _line(Text.assemble(("  ", "default"), (cmd, "green")))
 
 
+_PRIORITY_STYLES = {
+    "fix_now": "bold red",
+    "fix_soon": "yellow",
+    "monitor": "cyan",
+    "low_priority": "dim",
+}
+
+
+def priority_summary(counts: Dict[str, int]) -> None:
+    """Render the EPSS priority breakdown, most urgent first.
+
+    Severity says how bad a finding would be; this says what to do first.
+    """
+    from docksec.epss import PRIORITY_LABELS, PRIORITY_ORDER
+
+    present = [(tier, counts.get(tier, 0)) for tier in PRIORITY_ORDER]
+    present = [(tier, count) for tier, count in present if count]
+    if is_quiet() or not present:
+        return
+
+    console = get_console()
+    console.print()
+    _line(Text("Priority", style="bold cyan"))
+    for tier, count in present:
+        _line(
+            Text.assemble(
+                ("  ", "default"),
+                (f"{PRIORITY_LABELS[tier]:<13}", _PRIORITY_STYLES.get(tier, "default")),
+                (f" {count}", "bold"),
+            )
+        )
+
+
+def fix_plan(plan) -> None:
+    """Render the remediation plan: concrete commands, then the honest total."""
+    if is_quiet() or plan is None or plan.total_count == 0:
+        return
+
+    console = get_console()
+
+    if plan.package_upgrades:
+        console.print()
+        _line(Text("Fix commands", style="bold cyan"))
+        for item in plan.package_upgrades:
+            ids = ", ".join(item["ids"])
+            more = "" if item["finding_count"] <= len(item["ids"]) else f" +{item['finding_count'] - len(item['ids'])}"
+            _line(Text.assemble(("  > ", "dim"), (item["command"], "green")))
+            _line(
+                Text(
+                    f"      {item['severity']} - {item['installed']} -> {item['fixed']}"
+                    f"  ({ids}{more})",
+                    style="dim",
+                )
+            )
+
+    if plan.dockerfile_edits:
+        console.print()
+        _line(Text("Dockerfile changes", style="bold cyan"))
+        for edit in plan.dockerfile_edits:
+            location = f" (line {edit['line']})" if edit.get("line") else ""
+            _line(
+                Text.assemble(
+                    ("  - ", "cyan"),
+                    (f"[{edit['severity']}] ", "dim"),
+                    (edit["instruction"], "default"),
+                    (location, "dim"),
+                )
+            )
+
+    if plan.compose_edits:
+        console.print()
+        _line(Text("Compose changes", style="bold cyan"))
+        for edit in plan.compose_edits:
+            service = f" ({edit['service']})" if edit.get("service") else ""
+            _line(
+                Text.assemble(
+                    ("  - ", "cyan"),
+                    (f"[{edit['severity']}] ", "dim"),
+                    (edit["instruction"], "default"),
+                    (service, "dim"),
+                )
+            )
+
+    claim = plan.completion_claim()
+    if claim:
+        console.print()
+        _line(Text(claim, style="bold"))
+
+
+_CONFIDENCE_STYLES = {"high": "green", "medium": "yellow", "low": "dim"}
+
+
+def ai_analysis(analysis: Dict) -> None:
+    """Render the AI correlation pass.
+
+    Exploit chains come first and are the most prominent thing on screen: they
+    are the output no per-artifact scanner can produce, and the reason the
+    correlation pass exists.
+    """
+    if is_quiet() or not analysis:
+        return
+
+    console = get_console()
+    summary = analysis.get("summary")
+    chains = analysis.get("chains") or []
+    findings = analysis.get("findings") or []
+
+    if summary:
+        console.print()
+        _line(Text(summary, style="bold"))
+
+    if chains:
+        console.print()
+        _line(Text("Exploit chains", style="bold red"))
+        for chain in chains:
+            severity = str(chain.get("severity", "")).upper()
+            _line(
+                Text.assemble(
+                    ("  ", "default"),
+                    (f"[{severity}] ", "red"),
+                    (chain.get("title", ""), "bold"),
+                )
+            )
+            services = chain.get("services") or []
+            if services:
+                _line(Text(f"      services: {', '.join(services)}", style="dim"))
+            ids = chain.get("finding_ids") or []
+            if ids:
+                _line(Text(f"      combines: {', '.join(ids)}", style="dim"))
+            if chain.get("narrative"):
+                _line(Text(f"      {chain['narrative']}", style="default"))
+            if chain.get("fix"):
+                _line(Text.assemble(("      break it: ", "dim"), (chain["fix"], "green")))
+
+    if findings:
+        console.print()
+        _line(Text("AI analysis", style="bold cyan"))
+        for finding in findings:
+            severity = str(finding.get("severity", "")).upper()
+            confidence = str(finding.get("confidence", "")).lower()
+            location = f" (line {finding['line']})" if finding.get("line") else ""
+            _line(
+                Text.assemble(
+                    ("  - ", "cyan"),
+                    (f"[{severity}] ", "default"),
+                    (finding.get("title", ""), "bold"),
+                    (location, "dim"),
+                    (f"  {confidence} confidence", _CONFIDENCE_STYLES.get(confidence, "dim")),
+                )
+            )
+            if finding.get("why_it_matters"):
+                _line(Text(f"      {finding['why_it_matters']}", style="default"))
+            if finding.get("fix"):
+                _line(Text.assemble(("      fix: ", "dim"), (finding["fix"], "green")))
+
+
+def fix_diff(diff_text: str, applied, skipped, dry_run: bool = False,
+             backup_path: Optional[str] = None,
+             before: Optional[int] = None, after: Optional[int] = None) -> None:
+    """Render what --fix changed, or would change.
+
+    The diff comes first: a tool editing someone's file should show the edit
+    before summarizing it.
+    """
+    if is_quiet():
+        return
+
+    console = get_console()
+
+    if diff_text:
+        console.print()
+        for line in diff_text.splitlines():
+            if line.startswith("+++") or line.startswith("---"):
+                style = "bold"
+            elif line.startswith("+"):
+                style = "green"
+            elif line.startswith("-"):
+                style = "red"
+            elif line.startswith("@@"):
+                style = "cyan"
+            else:
+                style = "dim"
+            _line(Text(line, style=style))
+
+    if applied:
+        console.print()
+        verb = "Would apply" if dry_run else "Applied"
+        _line(Text(f"{verb} {len(applied)} change(s)", style="bold cyan"))
+        for change in applied:
+            _line(
+                Text.assemble(
+                    ("  - ", "cyan"),
+                    (change.get("description", ""), "default"),
+                    (f"  [{change.get('rule')}]", "dim"),
+                )
+            )
+
+    if skipped:
+        console.print()
+        _line(Text(f"Needs review ({len(skipped)})", style="bold yellow"))
+        for change in skipped[:6]:
+            _line(
+                Text.assemble(
+                    ("  - ", "yellow"),
+                    (change.get("instruction", ""), "default"),
+                )
+            )
+            if change.get("reason"):
+                _line(Text(f"      {change['reason']}", style="dim"))
+        if len(skipped) > 6:
+            _line(Text(f"  ... and {len(skipped) - 6} more", style="dim"))
+
+    console.print()
+    if dry_run:
+        _line(Text("Dry run: no files were changed. Re-run without --dry-run to apply.",
+                   style="bold"))
+        return
+
+    if backup_path:
+        _line(Text(f"Original saved to {backup_path}", style="dim"))
+
+    if before is not None and after is not None:
+        removed = before - after
+        if removed > 0:
+            _line(Text(
+                f"Dockerfile findings: {before} -> {after} ({removed} resolved)",
+                style="bold green",
+            ))
+        elif removed == 0:
+            _line(Text(
+                f"Dockerfile findings: {before} -> {after} (no change - the edits "
+                f"did not resolve a reported finding)",
+                style="yellow",
+            ))
+        else:
+            _line(Text(
+                f"Dockerfile findings: {before} -> {after} (went up; review the "
+                f"diff above)",
+                style="bold red",
+            ))
+    _line(Text("Review the diff and run your build before committing.", style="dim"))
+
+
+def coverage(notes: Iterable[str], gaps: Iterable[str] = ()) -> None:
+    """Render what the scan could not determine, and what it never examines.
+
+    Gaps come first and are styled as warnings: they mean results may be
+    incomplete. Notes are the tool's standing limits, not failures.
+    """
+    gaps = [g for g in gaps if g]
+    notes = [n for n in notes if n]
+    if is_quiet() or (not gaps and not notes):
+        return
+
+    console = get_console()
+    console.print()
+    _line(Text("Coverage", style="bold cyan"))
+    for gap in gaps:
+        _line(Text.assemble(("  ! ", "yellow"), (gap, "yellow")))
+    for note in notes:
+        _line(Text.assemble(("  . ", "dim"), (note, "dim")))
+
+
 def report_results(paths: Dict[str, str], results_dir: str) -> None:
     """List the report formats that were written and where."""
     if is_quiet():

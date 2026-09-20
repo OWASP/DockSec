@@ -1,12 +1,17 @@
 #!/bin/bash
 set -e
 
-# Set environment variables from inputs
-export OPENAI_API_KEY="${INPUT_OPENAI_API_KEY}"
-export ANTHROPIC_API_KEY="${INPUT_ANTHROPIC_API_KEY}"
-export GOOGLE_API_KEY="${INPUT_GOOGLE_API_KEY}"
-export LLM_PROVIDER="${INPUT_LLM_PROVIDER}"
-export LLM_MODEL="${INPUT_LLM_MODEL}"
+# Set environment variables from inputs.
+# Only export values that were actually provided: exporting an empty string is
+# not the same as leaving a variable unset. An empty LLM_PROVIDER fails
+# DocksecConfig validation and aborts the run with a traceback, even in
+# --scan-only mode where no provider is needed at all.
+for var in OPENAI_API_KEY ANTHROPIC_API_KEY GOOGLE_API_KEY LLM_PROVIDER LLM_MODEL; do
+  input_var="INPUT_${var}"
+  if [ -n "${!input_var}" ]; then
+    export "${var}=${!input_var}"
+  fi
+done
 
 # Run DockSec
 # The inputs are passed as environment variables prefixed with INPUT_

@@ -2,6 +2,74 @@
 requires = ["setuptools>=82.0.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "docksec"
+# Single source of truth for the version. The release workflow rewrites this
+# line, and tests/test_packaging.py asserts CITATION.cff matches it.
+version = "2026.8.19"
+description = "AI-Powered Docker Security Analyzer"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Advait Patel" }]
+keywords = ["docker", "security", "scanner", "devsecops", "owasp", "trivy", "hadolint"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+# Core install is scan-only (Trivy/Hadolint wrappers, reports, scoring) with no
+# LLM stack. AI analysis needs the [ai] extra.
+dependencies = [
+    "pydantic>=2.13,<3",
+    "python-dotenv>=1.0,<2",
+    "colorama>=0.4.6,<1",
+    "rich>=13.0,<16",
+    "fpdf2>=2.8,<3",
+    "setuptools>=65.0.0",
+    "ruamel.yaml>=0.18.6",
+    "jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+ai = [
+    "langchain-core>=1.3,<2",
+    "langchain>=1.2,<2",
+    "langchain-openai>=1.2,<2",
+    "langchain-anthropic>=1.4,<2",
+    "langchain-google-genai>=4.2,<5",
+    "langchain-ollama>=1.1,<2",
+]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+    "ruff",
+]
+
+[project.scripts]
+docksec = "docksec.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/OWASP/DockSec"
+Documentation = "https://github.com/OWASP/DockSec/blob/main/README.md"
+"Bug Tracker" = "https://github.com/OWASP/DockSec/issues"
+"Source Code" = "https://github.com/OWASP/DockSec"
+Changelog = "https://github.com/OWASP/DockSec/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["docksec*"]
+
+[tool.setuptools.package-data]
+docksec = ["templates/*"]
+
 [tool.ruff]
 target-version = "py312"
 

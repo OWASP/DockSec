@@ -1,0 +1,227 @@
+name: Container Image Smoke Test
+
+# Builds the image that backs the GitHub Action and proves it actually works.
+#
+# This exists because the image shipped for months with a broken Trivy install:
+# the install URL 404'd, `curl -sfL ... | sh` exits 0 on a 404, so the build
+# succeeded and produced an image with no Trivy in it. Every Action run then
+# failed with "Missing required tools: trivy". A build-success check would not
+# have caught it - only running a real scan does.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'entrypoint.sh'
+      - 'action.yml'
+      - 'docksec/**'
+      - 'pyproject.toml'
+      - '.github/workflows/docker-image-smoke.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'entrypoint.sh'
+      - 'action.yml'
+      - 'docksec/**'
+      - 'pyproject.toml'
+      - '.github/workflows/docker-image-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Build image and run a real scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Build image
+        run: docker build -t docksec:smoke .
+
+      # The Dockerfile asserts these at build time too. Repeated here so a
+      # regression is reported as a named test failure rather than an opaque
+      # build error, and so the installed versions appear in the CI log.
+      - name: Assert bundled tools are present
+        run: |
+          docker run --rm --entrypoint sh docksec:smoke -c '
+            set -e
+            trivy --version
+            hadolint --version
+            docksec --version
+          '
+
+      # Regression guard: /github/workspace is where the Action mounts the
+      # user's repository. The image used to install itself there, which both
+      # shipped DockSec's own source to every user (including the gitignored
+      # CLAUDE.md) and left files that the bind mount then shadowed.
+      - name: Assert the workspace mount point is empty
+        run: |
+          entries="$(docker run --rm --entrypoint sh docksec:smoke -c 'ls -A /github/workspace | wc -l')"
+          if [ "$entries" -ne 0 ]; then
+            echo "::error::/github/workspace is not empty ($entries entries); the image must not ship files into the Action's mount point"
+            docker run --rm --entrypoint sh docksec:smoke -c 'ls -A /github/workspace'
+            exit 1
+          fi
+
+      - name: Assert local-only files are not in the image
+        run: |
+          for f in CLAUDE.md .cursorrules; do
+            if docker run --rm --entrypoint sh docksec:smoke -c "test -e /src/$f -o -e /github/workspace/$f"; then
+              echo "::error::$f was copied into the image; it must be excluded by .dockerignore"
+              exit 1
+            fi
+          done
+
+      - name: Create a deliberately vulnerable Dockerfile
+        run: |
+          mkdir -p smoke-workspace
+          cat > smoke-workspace/Dockerfile <<'EOF'
+          FROM node:18
+          ENV DB_PASSWORD=hunter2supersecret
+          WORKDIR /app
+          COPY . .
+          RUN npm install
+          ADD https://example.com/payload.tar.gz /tmp/
+          EXPOSE 3306
+          CMD ["node","server.js"]
+          EOF
+
+      # The core assertion: a scan runs to completion through the Action's own
+      # entrypoint and produces findings. Uses --scan-only so no API key is
+      # needed; AI analysis is not what this test covers.
+      - name: Run a scan through the Action entrypoint
+        run: |
+          set -o pipefail
+          docker run --rm \
+            -v "${PWD}/smoke-workspace:/github/workspace" \
+            -e INPUT_DOCKERFILE=Dockerfile \
+            -e INPUT_SCAN_ONLY=true \
+            -e INPUT_FORMAT=json \
+            -e INPUT_OUTPUT_DIR=/github/workspace/results \
+            docksec:smoke 2>&1 | tee scan-output.txt
+
+      - name: Assert the scan produced a usable report
+        run: |
+          report="$(find smoke-workspace/results -name '*.json' -print -quit)"
+          if [ -z "$report" ]; then
+            echo "::error::no JSON report was written; the scan did not complete"
+            ls -R smoke-workspace || true
+            exit 1
+          fi
+          echo "Report: $report"
+          python3 - "$report" <<'PY'
+          import json, sys
+
+          with open(sys.argv[1]) as handle:
+              data = json.load(handle)
+
+          # A Dockerfile with a plaintext ENV password must not score well. This
+          # catches a scan that "succeeds" while silently finding nothing.
+          score = (data.get("scan_info") or {}).get("analysis_score")
+          if score is None:
+              sys.exit("::error::report has no analysis_score")
+          if score > 50:
+              sys.exit(f"::error::score {score} is too high for a Dockerfile with a plaintext credential")
+          print(f"analysis_score={score} (expected low)")
+          PY
+
+      - name: Assert Hadolint actually ran
+        run: |
+          if ! grep -q 'DL[0-9]\{4\}' scan-output.txt; then
+            echo "::error::no Hadolint rule IDs in output; Hadolint did not run or produced nothing"
+            cat scan-output.txt
+            exit 1
+          fi
+          echo "Hadolint findings present."
+
+      # This step tests the --fail-on gate, so the compose file is shaped to
+      # isolate it from the per-service image scan.
+      #
+      # The DockSec image contains no Docker CLI - it is a scanning image, not a
+      # Docker-in-Docker one - so any service naming a pullable image fails its
+      # per-service scan. DockSec then exits 3 for an incomplete scan in
+      # preference to the gate's exit 1, which is correct behaviour but means
+      # the exit code no longer tells us anything about the gate.
+      #
+      # A service with neither a resolvable Dockerfile nor an image is skipped
+      # entirely, so no service scan is attempted and no detection gap is
+      # recorded. The static compose rules still fire on privileged/secret/port,
+      # and the exit code reflects the gate alone.
+      #
+      # Per-service image scanning is exercised by the Dockerfile scan earlier
+      # in this workflow and by the self-scan workflow; it is deliberately not
+      # what this assertion covers.
+      - name: Create a vulnerable compose file
+        run: |
+          cat > smoke-workspace/docker-compose.yml <<'EOF'
+          services:
+            db:
+              build:
+                context: .
+                dockerfile: Dockerfile.not-present
+              privileged: true
+              environment:
+                - POSTGRES_PASSWORD=supersecret
+              ports:
+                - "5432:5432"
+          EOF
+
+      - name: Assert --fail-on gates the build
+        run: |
+          set +e
+          output="$(
+            docker run --rm \
+              -v "${PWD}/smoke-workspace:/github/workspace" \
+              -e INPUT_COMPOSE=docker-compose.yml \
+              -e INPUT_SCAN_ONLY=true \
+              -e INPUT_FAIL_ON=critical \
+              docksec:smoke 2>&1
+          )"
+          code=$?
+          set -e
+
+          # Print the output whatever happens: discarding it meant a failure
+          # here reported only an exit code, with no way to tell a broken scan
+          # from a gate that did not fire.
+          printf '%s\n' "$output"
+
+          # 0 means the gate never fired; 2 is a usage error and 3 means the
+          # scan did not complete - both are breakage, not gating, and must not
+          # be accepted here.
+          if [ "$code" -ne 1 ]; then
+            echo "::error::expected exit 1 from --fail-on critical, got $code"
+            exit 1
+          fi
+          echo "Gate fired correctly (exit 1)."
+
+      # The same vulnerable file without --fail-on: findings are reported but
+      # nothing gates, so the run succeeds. This is what distinguishes "found
+      # problems" from "was asked to block on them".
+      - name: Assert a run without a gate still exits 0
+        run: |
+          set +e
+          output="$(
+            docker run --rm \
+              -v "${PWD}/smoke-workspace:/github/workspace" \
+              -e INPUT_COMPOSE=docker-compose.yml \
+              -e INPUT_SCAN_ONLY=true \
+              docksec:smoke 2>&1
+          )"
+          code=$?
+          set -e
+
+          printf '%s\n' "$output"
+
+          if [ "$code" -ne 0 ]; then
+            echo "::error::expected exit 0 without --fail-on, got $code"
+            exit 1
+          fi
+          echo "Ungated run exits 0 as expected."

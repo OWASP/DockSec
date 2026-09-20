@@ -185,7 +185,11 @@ CODE_REVIEW_AND_IMPROVEMENTS.md
 test_e2e.py
 E2E_TEST_README.md
 CLI_TESTING_GUIDE.md
-*TEST*.md
+# Root-level only, and case-sensitive: an unanchored *TEST*.md matched
+# docs/rules/compose-la-TEST-or-untagged-image.md - "latest" contains "test" -
+# so a legitimate rule page was silently untracked and CI failed on a clean
+# checkout while passing locally.
+/*TEST*.md
 PRIORITY_2_IMPLEMENTATION_SUMMARY.md
 SESSION_SUMMARY.md
 
@@ -195,6 +199,8 @@ CURSOR_CONFIGURATION.md
 
 # Internal/maintainer documentation (not for public repository)
 docs/promptfoo-benchmark-review.md
+docs/docksec-strategy-2026.md
+docs/cve-lite-cli-comparison.md
 ROADMAP.md
 
 # Claude Code project instructions (local only, not for public repository)

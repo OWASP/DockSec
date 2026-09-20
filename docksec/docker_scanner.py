@@ -10,7 +10,7 @@ from pathlib import Path
 from docksec import output as ui  # aliased; a local var named `output` is used below
 from docksec.config import RESULTS_DIR
 from docksec.enums import Severity
-from docksec.utils import ScoreResponse, get_llm, print_section, get_custom_logger
+from docksec.utils import print_section, get_custom_logger
 from collections import defaultdict
 
 # Initialize logger
@@ -119,30 +119,45 @@ class DockerSecurityScanner:
     @staticmethod
     def _validate_file_path(file_path: str) -> Path:
         """
-        Validate and sanitize file path to prevent path traversal attacks.
-        
+        Resolve a user-supplied file path.
+
+        Rejecting any path containing '..' was simple but wrong: it blocked
+        ordinary relative paths such as `docksec ../service/Dockerfile`, the
+        standard invocation in a monorepo where each service has its own
+        directory. It also gave no real protection - DockSec is a local CLI, the
+        path comes from the user's own command line, and it is read with the
+        user's own permissions, so there is no privilege boundary for a
+        traversal check to defend.
+
+        What matters instead is that the path resolves to something that exists
+        and is a regular file, so a directory or a dangling symlink fails here
+        with a clear message rather than deeper in a scanner subprocess.
+
         Args:
             file_path: Path to validate
-            
+
         Returns:
-            Path object if valid
-            
+            Resolved Path object
+
         Raises:
-            ValueError: If path is invalid or contains path traversal attempts
+            ValueError: If the path is empty, unresolvable, missing, or is not
+                a regular file
         """
         if not file_path:
             raise ValueError("File path cannot be empty")
 
-        # Check the raw string before resolution — Path.resolve() removes '..'
-        # so checking the resolved path would silently allow traversal attempts.
-        if '..' in file_path:
-            raise ValueError(f"Invalid path: path traversal detected in '{file_path}'")
-
         try:
-            path = Path(file_path).resolve()
-            return path
-        except (OSError, ValueError) as e:
+            resolved = Path(file_path).resolve()
+        except (OSError, ValueError, RuntimeError) as e:
             raise ValueError(f"Invalid file path '{file_path}': {str(e)}")
+
+        if resolved.is_dir():
+            raise ValueError(
+                f"'{file_path}' is a directory; provide the path to a "
+                f"Dockerfile (for example {file_path.rstrip('/')}/Dockerfile)"
+            )
+
+        return resolved
     
     @staticmethod
     def _validate_image_name(image_name: str) -> str:
@@ -280,25 +295,13 @@ class DockerSecurityScanner:
         self.offline = offline
         self.analysis_score = None  # Initialize to avoid AttributeError when accessed before calculation
         
-        # Initialize score chain: skip if scan_only or skip_ai_scoring flags are set
-        if scan_only or skip_ai_scoring:
-            self.score_chain = None
-        else:
-            try:
-                from docksec.enums import LLMProvider
-                from docksec.config_manager import get_config
-                from docksec.config import docker_score_prompt
-                config = get_config()
-                provider = config.llm_provider
-                llm = get_llm()
-                
-                if provider == LLMProvider.OPENAI:
-                    self.score_chain = docker_score_prompt | llm.with_structured_output(ScoreResponse, method="json_mode")
-                else:
-                    self.score_chain = docker_score_prompt | llm.with_structured_output(ScoreResponse)
-            except Exception as e:
-                logger.warning(f"Failed to initialize AI scoring: {e}")
-                self.score_chain = None
+        # Scoring is deterministic. It used to ask a model to "Score Docker
+        # security 1-100" from a count summary, which meant two runs over
+        # identical inputs could disagree - indefensible for a number a CI gate
+        # and a compliance report both depend on. The model's budget is spent on
+        # correlation instead, where non-determinism is acceptable and the
+        # output is genuinely something rules cannot produce.
+        self.score_chain = None
         
         # Ensure results directory exists
         try:
@@ -893,12 +896,28 @@ class DockerSecurityScanner:
             'dockerfile_path': self.dockerfile_path
         }
 
-        # Run Dockerfile scan
+        # Run Dockerfile scan. Hadolint and Trivy's config scanner both run and
+        # produce structured findings, so Dockerfile issues participate in
+        # scoring, reports, --json, SARIF, and the --fail-on gate exactly as
+        # image vulnerabilities do.
         if self.dockerfile_path:
-            dockerfile_success, dockerfile_output = self.scan_dockerfile()
-            results['dockerfile_scan']['success'] = dockerfile_success
-            results['dockerfile_scan']['output'] = dockerfile_output
-            if not dockerfile_success:
+            from docksec import findings as findings_mod
+
+            dockerfile_findings, dockerfile_errors = findings_mod.scan_dockerfile_findings(
+                self.dockerfile_path, offline=getattr(self, 'offline', False)
+            )
+            findings_mod.report(dockerfile_findings, dockerfile_errors)
+
+            results['json_data'].extend(dockerfile_findings)
+            results['dockerfile_findings'] = dockerfile_findings
+            results['dockerfile_scan_errors'] = dockerfile_errors
+            # `success` means "no issues found", preserving the existing
+            # contract that the score calculator and reports rely on.
+            results['dockerfile_scan']['success'] = not dockerfile_findings
+            results['dockerfile_scan']['output'] = findings_mod.summarize(dockerfile_findings)
+            results['dockerfile_scan']['skipped'] = False
+            if dockerfile_errors:
+                # A scanner that could not run is a failure; findings are not.
                 scan_status = False
         else:
             results['dockerfile_scan']['success'] = True
@@ -914,10 +933,12 @@ class DockerSecurityScanner:
             if not image_success:
                 scan_status = False
 
-            # Get JSON data
+            # Get JSON data. Append rather than assign: the Dockerfile pass
+            # above has already put its findings in json_data, and overwriting
+            # would silently discard every one of them on a full scan.
             json_success, json_data = self.scan_image_json(severity)
             if json_success:
-                results['json_data'] = json_data
+                results['json_data'].extend(json_data)
 
             # Cache results
             if self.use_cache:
@@ -975,12 +996,11 @@ class DockerSecurityScanner:
 
     def get_security_score(self, results: Dict) -> float:
         """
-        Calculate the security score based on scan results.
+        Calculate the security score from scan results.
 
-        Uses LLM-based scoring when available. Falls back to local static
-        scoring when scan_only=True or if the LLM call fails (e.g., quota exceeded).
-        
-        Optimizes token usage by sending summarized vulnerability data to LLM.
+        Deterministic: identical inputs always produce an identical score. CI
+        gates and compliance reports both depend on this number, so a score that
+        could vary between runs over the same image was not defensible.
 
         Args:
             results: The scan results to calculate the score from
@@ -988,23 +1008,9 @@ class DockerSecurityScanner:
         Returns:
             The calculated security score
         """
-        if self.score_chain is None:
-            return self._calculate_local_score(results)
+        return self._calculate_local_score(results)
 
-        try:
-            from docksec.config import summarize_vulnerabilities
-            
-            # Create summarized vulnerability data instead of sending full results
-            vulnerabilities = results.get('json_data', [])
-            vuln_summary = summarize_vulnerabilities(vulnerabilities, max_count=20)
-            
-            # Send only summary, not full results dict
-            score = self.score_chain.invoke({"results": vuln_summary})
-            return score.score
-        except Exception as e:
-            logger.warning(f"AI scoring failed: {e}. Falling back to local scoring.")
-            return self._calculate_local_score(results)
-    
+
 def main():
     """Main function to run the security scanner."""
     if len(sys.argv) < 3:

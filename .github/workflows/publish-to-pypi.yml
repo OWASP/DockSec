@@ -12,7 +12,10 @@ jobs:
   update-version:
     runs-on: ubuntu-latest
     permissions:
+      # contents to create and push the tag; pull-requests to open the
+      # follow-up PR that records the bump on main.
       contents: write
+      pull-requests: write
     outputs:
       version: ${{ steps.set_version.outputs.VERSION }}
     steps:
@@ -25,22 +28,85 @@ jobs:
         id: set_version
         run: echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
 
-      - name: Update setup.py version
+      # The version lives in pyproject.toml (the packaging source of truth) and
+      # is mirrored in CITATION.cff. Both are rewritten here and the result is
+      # verified, because a sed that silently matches nothing would otherwise
+      # publish the previous version under a new tag.
+      - name: Update version
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          sed -i 's/version=".*"/version="${{ github.event.inputs.version }}"/' setup.py
-          
-      - name: Commit and push version update
+          set -euo pipefail
+
+          # Exactly one line may start with `version = ` at column zero: the one
+          # in [project]. Dependency specifiers are indented inside arrays, so a
+          # column-anchored substitution cannot touch them. Assert that before
+          # editing rather than trusting it.
+          matches="$(grep -c '^version = ' pyproject.toml || true)"
+          if [ "$matches" -ne 1 ]; then
+            echo "::error::expected exactly one top-level version in pyproject.toml, found ${matches}"
+            exit 1
+          fi
+
+          sed -i "s|^version = \".*\"|version = \"${VERSION}\"|" pyproject.toml
+          sed -i "s|^version: \".*\"|version: \"${VERSION}\"|" CITATION.cff
+
+          # A sed that matches nothing exits 0, so verify rather than assume.
+          grep -q "^version = \"${VERSION}\"" pyproject.toml \
+            || { echo "::error::pyproject.toml version was not updated to ${VERSION}"; exit 1; }
+          grep -q "^version: \"${VERSION}\"" CITATION.cff \
+            || { echo "::error::CITATION.cff version was not updated to ${VERSION}"; exit 1; }
+
+      # The tag carries the version, and it is created from the bumped tree
+      # without that commit ever landing on main. main is a protected branch
+      # requiring pull requests and status checks, and the bot pushing directly
+      # to it was both rejected (GH006) and the wrong thing to want: a release
+      # workflow should not be the one actor allowed to bypass review.
+      #
+      # `git tag` on a detached commit still records the full tree, so the
+      # tagged source has the correct version in pyproject.toml even though
+      # main does not yet.
+      - name: Create and push the release tag
+        env:
+          VERSION: ${{ github.event.inputs.version }}
         run: |
+          set -euo pipefail
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add setup.py
-          # Only commit if there are changes
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: bump version to ${{ github.event.inputs.version }}" && git push)
 
-      - name: Create and push tag
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::tag v${VERSION} already exists"
+            exit 1
+          fi
+
+          git add pyproject.toml CITATION.cff
+          git commit -m "chore: release ${VERSION}"
+          git tag -a "v${VERSION}" -m "DockSec ${VERSION}"
+          git push origin "v${VERSION}"
+          echo "Tagged v${VERSION} (not pushed to main; see the follow-up PR)"
+
+      # Record the bump on main through the normal review path, so the branch
+      # does not permanently disagree with the released version. A pre-release
+      # is skipped: main should keep pointing at the last real release.
+      - name: Open a pull request recording the version bump
+        if: ${{ !contains(github.event.inputs.version, 'rc') && !contains(github.event.inputs.version, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.inputs.version }}
         run: |
-          git tag v${{ github.event.inputs.version }}
-          git push origin v${{ github.event.inputs.version }}
+          set -euo pipefail
+          branch="release/bump-${VERSION}"
+          git push origin "HEAD:refs/heads/${branch}"
+          gh pr create \
+            --base main \
+            --head "${branch}" \
+            --title "chore: record version bump to ${VERSION}" \
+            --body "Records the version released as \`v${VERSION}\`.
+
+          The tag was created from this tree and the artifacts are already
+          published; this PR only brings \`main\` into agreement so the branch
+          does not report a stale version." \
+            || echo "::warning::could not open the bump PR; raise it by hand"
 
   publish-pypi:
     needs: update-version
@@ -48,8 +114,11 @@ jobs:
     environment: pypi-release
     permissions:
       contents: read
+      # id-token for PyPI trusted publishing and Sigstore; attestations to
+      # record the provenance statement against the repository.
       id-token: write
-    
+      attestations: write
+
     steps:
     - name: Checkout code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -68,11 +137,40 @@ jobs:
     
     - name: Build package
       run: python -m build
-    
+
+    # Attest the artifacts before publishing them. For a security tool this is
+    # close to table stakes: a consumer can verify the wheel on PyPI was built
+    # by this workflow from this repository, rather than uploaded by hand or by
+    # someone who obtained the API token.
+    #
+    #   gh attestation verify docksec-X.Y.Z-py3-none-any.whl --repo OWASP/DockSec
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+      with:
+        subject-path: 'dist/*'
+
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # Called explicitly rather than left to the `push: tags` trigger on that
+  # workflow. A tag pushed with GITHUB_TOKEN does not start further workflows,
+  # so relying on the trigger meant the v2026.9.20rc1 release finished green
+  # with no image published and no failure to point at it.
+  publish-image:
+    needs: [update-version, publish-pypi]
+    uses: ./.github/workflows/publish-container-image.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      ref: v${{ needs.update-version.outputs.version }}
+      image_tag: ${{ needs.update-version.outputs.version }}
+      # A pre-release publishes its own version tag but must not move :latest.
+      publish_latest: ${{ !contains(needs.update-version.outputs.version, 'rc') && !contains(needs.update-version.outputs.version, '-') }}
 
   publish-github-release:
     needs: [update-version, publish-pypi]

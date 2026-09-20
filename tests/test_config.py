@@ -23,15 +23,32 @@ class TestConfig(unittest.TestCase):
         api_key = get_openai_api_key()
         self.assertEqual(api_key, 'test-key-123')
     
-    def test_prompt_templates_exist(self):
-        """Test that prompt templates are defined."""
-        from docksec.config import docker_agent_template, docker_score_template
-        
-        self.assertIsNotNone(docker_agent_template)
-        self.assertIsNotNone(docker_score_template)
-        self.assertIn("Dockerfile", docker_agent_template)
-        self.assertIn("score", docker_score_template.lower())
-    
+    def test_prompt_templates_are_gone_from_config(self):
+        """The prompts no longer live here.
+
+        The scoring prompt was removed with the LLM scoring path, and the
+        analysis prompt moved to docksec/ai_analysis.py where it is versioned
+        and covered by a golden-file test. Leaving copies in config.py would
+        give a reader two sources of truth for what gets sent to a model.
+        """
+        import docksec.config as config
+
+        for name in ("docker_agent_template", "docker_score_template",
+                     "docker_agent_prompt", "docker_score_prompt"):
+            with self.subTest(name=name):
+                self.assertFalse(
+                    hasattr(config, name),
+                    f"{name} is still defined in config.py; the prompt lives in "
+                    f"ai_analysis.py",
+                )
+
+    def test_the_live_prompt_is_versioned(self):
+        from docksec.ai_analysis import PROMPT_VERSION, SYSTEM_PROMPT
+
+        self.assertGreaterEqual(PROMPT_VERSION, 2)
+        self.assertIn("container security analyst", SYSTEM_PROMPT.lower())
+
+
     def test_truncate_dockerfile_by_lines(self):
         """Test Dockerfile truncation by line count."""
         from docksec.config import truncate_dockerfile
@@ -148,17 +165,22 @@ class TestConfig(unittest.TestCase):
         self.assertIn("CVE-2023-9999", summary)
         self.assertIn("HIGH", summary)
     
-    def test_optimized_prompts_are_shorter(self):
-        """Test that optimized prompts are more concise than originals."""
-        from docksec.config import docker_agent_template, docker_score_template
-        
-        # Optimized templates should be reasonably sized (not excessively long)
-        self.assertLess(len(docker_agent_template), 500)
-        self.assertLess(len(docker_score_template), 400)
-        
-        # They should still contain essential keywords
-        self.assertIn("json", docker_agent_template.lower())
-        self.assertIn("score", docker_score_template.lower())
+    def test_the_prompt_carries_real_instructions(self):
+        """The inverse of the test this replaces.
+
+        The old test asserted the prompt was under 500 characters - and the
+        prompt it guarded was ten lines with no role, no severity guidance and
+        no scanner context, which is why the AI pass could not do what the
+        README claimed. Brevity was never the property worth protecting.
+        """
+        from docksec.ai_analysis import SYSTEM_PROMPT
+
+        prompt = SYSTEM_PROMPT.upper()
+        for instruction in ("RANK", "CORRELATE", "EXPLAIN", "FIX"):
+            with self.subTest(instruction=instruction):
+                self.assertIn(instruction, prompt)
+        self.assertIn("do not invent", SYSTEM_PROMPT.lower())
+        self.assertIn("untrusted data", SYSTEM_PROMPT.lower())
 
     def test_get_html_template(self):
         """Test HTML template loading."""

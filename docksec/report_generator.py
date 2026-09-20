@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 
 from docksec import output
 from docksec.config import RESULTS_DIR, TEMPLATES_DIR
+from docksec.score_calculator import SCORE_VERSION
 from docksec.utils import get_custom_logger
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -113,6 +114,7 @@ class ReportGenerator:
                     "timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ),
                 "analysis_score": self.analysis_score,
+                "score_version": SCORE_VERSION,
                 "scan_mode": results.get("scan_mode", "full"),
             },
             "vulnerabilities": json_results,
@@ -304,7 +306,7 @@ class ReportGenerator:
         if pkg:
             message = f"{message} ({pkg}{'@' + version if version else ''})"
 
-        region = ReportGenerator._sarif_region(vuln.get("Target"))
+        region = ReportGenerator._sarif_region(vuln.get("Target"), vuln.get("Line"))
         location = {
             "physicalLocation": {
                 "artifactLocation": {"uri": artifact_uri},
@@ -321,12 +323,21 @@ class ReportGenerator:
         }
 
     @staticmethod
-    def _sarif_region(target) -> Optional[Dict]:
-        """Extract a line-number region from a compose Target ('file:service:line').
+    def _sarif_region(target, line=None) -> Optional[Dict]:
+        """Build a SARIF region for a finding, when its position is known.
 
-        Trivy image-vulnerability targets carry a package path, not a line
-        number, so this only produces a region for compose findings.
+        Two sources, in order of reliability:
+
+        - ``line``: set directly by the Dockerfile scanners. Without this, a
+          Dockerfile finding lands on the file with no position and GitHub
+          cannot annotate the pull request line that caused it.
+        - a compose ``Target`` of the form ``file:service:line``.
+
+        Trivy image-vulnerability targets carry a package path rather than a
+        line number, so those correctly produce no region.
         """
+        if isinstance(line, int) and line > 0:
+            return {"startLine": line}
         if not target:
             return None
         parts = str(target).rsplit(":", 1)

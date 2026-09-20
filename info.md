@@ -4,4 +4,4 @@
 * [repo](https://github.com/OWASP/DockSec)
 
 ### Change Log
-* [changes](https://github.com/OWASP/DockSec/blob/main/docs/CHANGELOG.md)
+* [changes](https://github.com/OWASP/DockSec/blob/main/CHANGELOG.md)

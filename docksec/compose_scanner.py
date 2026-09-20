@@ -44,6 +44,11 @@ class ComposeScanner:
             "Target": f"{self.compose_path.name}:{service}:{line}",
             "PkgName": "docker-compose",
             "InstalledVersion": "N/A",
+            # A misconfiguration is fixed by editing the file, not by upgrading
+            # to a version, but the key must exist: every finding carries the
+            # same shape so report writers and the fix planner need no special
+            # cases. See tests/test_output_contract.py.
+            "FixedVersion": None,
             "Status": "affected",
             "CVSS": "N/A",
             "PrimaryURL": ""
@@ -205,8 +210,16 @@ class ComposeScanner:
                         service, self._get_line(env, default_line)
                     )
 
+    # Suffixes marking a variable that holds a *path to* a secret rather than
+    # the secret itself. POSTGRES_PASSWORD_FILE=/run/secrets/db_password is the
+    # Docker secrets pattern - the recommended alternative to a plaintext value -
+    # so flagging it penalizes teams for doing the right thing.
+    _SECRET_INDIRECTION_SUFFIXES = ('_file', '_path', '_filepath')
+
     def _is_secret_key(self, key: str) -> bool:
         key = str(key).lower()
+        if key.endswith(self._SECRET_INDIRECTION_SUFFIXES):
+            return False
         return any(s in key for s in ['password', 'secret', 'token', 'api_key', 'private_key', 'private-key'])
 
     # Ports whose exposure on all interfaces is a real risk signal: remote

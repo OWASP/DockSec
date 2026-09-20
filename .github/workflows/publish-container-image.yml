@@ -1,0 +1,210 @@
+name: Publish Container Image
+
+# Publishes the DockSec image to GitHub Container Registry so evaluators can run
+# a scan with no install:
+#
+#   docker run --rm -v "$PWD:/github/workspace" ghcr.io/owasp/docksec <args>
+#
+# Runs on release tags and can be dispatched manually. The image is built for
+# amd64 and arm64: CI runners are amd64, but a large share of developer laptops
+# are arm64, and an amd64-only image runs under emulation there (slow enough to
+# look broken).
+
+on:
+  # Called directly by the release workflow. This cannot be left to the tag
+  # trigger below: a tag pushed with GITHUB_TOKEN does not start further
+  # workflows - GitHub suppresses that to prevent recursion - so the
+  # v2026.9.20rc1 release completed with no image published and nothing in the
+  # run to indicate it was missing.
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to build from (the release tag)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Version tag to publish, without a leading v'
+        required: true
+        type: string
+      publish_latest:
+        description: 'Also publish :latest (false for pre-releases)'
+        required: false
+        default: false
+        type: boolean
+
+  # Retained for a tag pushed by a person, where the trigger does fire.
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish (e.g. 2026.9.20). Defaults to the run number for test builds.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  # No IMAGE_NAME here: github.repository keeps the repository's casing, and
+  # GHCR paths must be lowercase. It is derived per-run in the job below.
+
+jobs:
+  publish:
+    name: Build and publish multi-arch image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # Required for the build provenance attestation below.
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Empty for a tag push or manual dispatch, where the default ref is
+          # already correct.
+          ref: ${{ inputs.ref || '' }}
+
+      # GHCR repository paths must be lowercase, but `github.repository` keeps
+      # the repository's own casing - here OWASP/DockSec. docker/metadata-action
+      # lowercases for us, so the image pushed fine, but actions/attest does not
+      # and tried to write the provenance to ghcr.io/OWASP/DockSec. The registry
+      # rejects that path outright (a token request for it returns 400), which
+      # surfaced as a 403 on the blob upload.
+      - name: Derive the lowercase image name
+        id: image
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagging:
+      #   v2026.9.20 -> :2026.9.20, :2026.9, :latest
+      # A moving major/minor tag lets users pin at the granularity they want.
+      # `latest` only moves on a real tag push, never on a manual test build.
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # Called from the release workflow: the version and whether it is a
+            # pre-release are passed in explicitly, because github.ref is the
+            # caller's ref rather than the tag.
+            type=raw,value=${{ inputs.image_tag }},enable=${{ inputs.image_tag != '' }}
+            type=raw,value=latest,enable=${{ inputs.publish_latest }}
+            # Tag push or manual dispatch. `latest` must not follow a
+            # pre-release: it is what every `docker run ghcr.io/owasp/docksec`
+            # in the README resolves to.
+            type=raw,value=latest,enable=${{ inputs.image_tag == '' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') && !contains(github.ref, 'rc') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=raw,value=build-${{ github.run_number }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.tag == '' }}
+          labels: |
+            org.opencontainers.image.title=DockSec
+            org.opencontainers.image.description=AI-powered Docker security scanner (OWASP Lab Project)
+            org.opencontainers.image.licenses=MIT
+
+      # Build amd64 first and load it locally so the smoke test runs against a
+      # real image before anything is pushed. Buildx cannot --load a multi-arch
+      # manifest, so this is a separate single-arch build; the layer cache makes
+      # the multi-arch build below cheap.
+      - name: Build amd64 image for verification
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: docksec:verify
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image before publishing
+        run: |
+          set -euo pipefail
+
+          # The Dockerfile asserts these at build time; repeat them here so a
+          # publish never proceeds on an image whose tools are missing.
+          docker run --rm --entrypoint sh docksec:verify -c '
+            set -e
+            trivy --version
+            hadolint --version
+            docksec --version
+          '
+
+          mkdir -p verify-workspace
+          cat > verify-workspace/Dockerfile <<'EOF'
+          FROM node:18
+          ENV DB_PASSWORD=hunter2supersecret
+          USER root
+          CMD ["node","server.js"]
+          EOF
+
+          docker run --rm \
+            -v "${PWD}/verify-workspace:/github/workspace" \
+            -e INPUT_DOCKERFILE=Dockerfile \
+            -e INPUT_SCAN_ONLY=true \
+            -e INPUT_FORMAT=json \
+            -e INPUT_OUTPUT_DIR=/github/workspace/results \
+            docksec:verify
+
+          test -n "$(find verify-workspace/results -name '*.json' -print -quit)" \
+            || { echo "::error::image produced no report; refusing to publish"; exit 1; }
+          echo "Image verified."
+
+      - name: Build and push multi-arch image
+        id: push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Lets a consumer verify the image was built by this workflow from this
+      # repository, rather than pushed by hand.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summarize
+        run: |
+          {
+            echo "### Image published"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "Run a scan with no install:"
+            echo
+            echo '```bash'
+            echo 'docker run --rm -v "$PWD:/github/workspace" \'
+            echo '  -e INPUT_DOCKERFILE=Dockerfile -e INPUT_SCAN_ONLY=true \'
+            echo "  ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

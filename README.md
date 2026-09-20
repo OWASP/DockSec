@@ -48,12 +48,21 @@ Everything scans locally; the only thing that ever leaves your machine is the (s
   <p><em>DockSec workflow: from scanning to actionable insights</em></p>
 </div>
 
-DockSec follows a four-stage pipeline:
+DockSec follows a five-stage pipeline:
 
-1. **Scan**: Runs Trivy, Hadolint, and Docker Scout locally on your environment.
-2. **Analyze**: AI correlates findings across all scanners to remove noise and assess real-world impact.
-3. **Recommend**: Generates human-readable explanations and specific remediation steps.
-4. **Report**: Exports actionable results as HTML, PDF, JSON, CSV, Markdown, SARIF, and CycloneDX SBOM.
+1. **Scan**: Runs Trivy (image vulnerabilities and Dockerfile misconfigurations),
+   Hadolint, and Docker Scout locally on your environment.
+2. **Prioritize**: Ranks every CVE finding by severity combined with its
+   [EPSS](https://www.first.org/epss/) exploitation likelihood, so the list is
+   ordered by what to fix first rather than by what was found first.
+3. **Correlate**: Detects [exploit chains](docs/exploit-chains.md) where separate
+   findings combine into one attack path - a credentialed database that an
+   internet-facing service can reach is a chain, not two unrelated findings.
+   With an API key, an AI pass reasons over the full scan output to rank, explain,
+   and extend this.
+4. **Recommend**: Produces copy-and-run fix commands and concrete Dockerfile or
+   compose changes, and states how many findings they resolve.
+5. **Report**: Exports actionable results as HTML, PDF, JSON, CSV, Markdown, SARIF, and CycloneDX SBOM.
 
 ---
 
@@ -134,7 +143,42 @@ Before any content is sent to an AI provider, secret-looking values (passwords, 
 API keys, private key blocks) are masked automatically. See
 [Data flow and privacy](#data-flow-and-privacy).
 
-### 5. Or use the GitHub Action
+### 5. Or run the container image (nothing to install)
+
+The published image bundles pinned versions of Trivy and Hadolint, so there is
+nothing to install and nothing to configure:
+
+```bash
+docker run --rm -v "$PWD:/github/workspace" \
+  -e INPUT_DOCKERFILE=Dockerfile \
+  -e INPUT_SCAN_ONLY=true \
+  ghcr.io/owasp/docksec:latest
+```
+
+Published multi-arch (amd64 and arm64) on every release. Pin to a specific
+version (`ghcr.io/owasp/docksec:2026.8.19`) or a minor series
+(`ghcr.io/owasp/docksec:2026.8`) rather than `latest` in CI. Every image carries
+a build provenance attestation:
+
+```bash
+gh attestation verify oci://ghcr.io/owasp/docksec:latest --repo OWASP/DockSec
+```
+
+The image reads the same `INPUT_*` variables as the GitHub Action, so any Action
+input works here: `INPUT_IMAGE`, `INPUT_COMPOSE`, `INPUT_SEVERITY`,
+`INPUT_FAIL_ON`, `INPUT_FORMAT`, `INPUT_SARIF`, `INPUT_OUTPUT_DIR`. Write reports
+somewhere on the mount to keep them after the container exits:
+
+```bash
+docker run --rm -v "$PWD:/github/workspace" \
+  -e INPUT_COMPOSE=docker-compose.yml \
+  -e INPUT_SCAN_ONLY=true \
+  -e INPUT_FORMAT=json,html \
+  -e INPUT_OUTPUT_DIR=/github/workspace/docksec-reports \
+  ghcr.io/owasp/docksec:latest
+```
+
+### 6. Or use the GitHub Action
 
 ```yaml
 - name: Run DockSec AI Scanner
@@ -202,7 +246,18 @@ docksec install-skill
 docksec Dockerfile --scan-only --quiet                  # warnings, errors, summary only
 docksec Dockerfile --scan-only --verbose                # INFO-level diagnostics on stderr
 docksec Dockerfile --scan-only --verbose --log-file logs/docksec.log
+docksec Dockerfile --scan-only --compact-output         # shorter per-finding output
 docksec Dockerfile --no-color                           # also honors NO_COLOR
+
+# Apply the mechanical Dockerfile fixes (keeps a .bak, re-scans, shows the delta)
+docksec Dockerfile --scan-only --fix --dry-run          # print the diff, change nothing
+docksec Dockerfile --scan-only --fix
+
+# Rank findings by severity alone, with no EPSS lookup and no network call
+docksec Dockerfile --scan-only --no-epss
+
+# Treat a scan that could not complete as a failure, not a pass
+docksec Dockerfile --scan-only --fail-on high --incomplete-policy fail
 ```
 
 ---
@@ -265,7 +320,7 @@ which policy was applied.
 | `provider` | `--provider` | `openai`, `anthropic`, `google`, `ollama` |
 | `model` | `--model` | Model name for the provider |
 | `offline` | `--offline` | No network; skips AI and Docker Scout |
-| `skip_ai_scoring` | `--skip-ai-scoring` | Local scoring only |
+| `skip_ai_scoring` | `--skip-ai-scoring` | Deprecated and ignored; scoring is always deterministic |
 | `no_redact` | `--no-redact` | Do not mask secrets before the AI call |
 | `no_cache` | `--no-cache` | Bypass the scan cache |
 | `ignore_file` | `--ignore-file` | Waiver file path |
@@ -306,9 +361,82 @@ DockSec uses CI-friendly exit codes so builds and shells can react to results:
 | `2` | Usage or argument error |
 | `3` | Tool or runtime error (scan failed, image not found, missing tools) |
 
-`--fail-on` gates on the structured findings (image vulnerabilities and compose
-misconfigurations). When `--fail-on` is below the requested `--severity`, the scan
-severity is widened automatically so the gate can observe those findings.
+`--fail-on` gates on every structured finding: image vulnerabilities, Dockerfile
+misconfigurations, and compose misconfigurations. When `--fail-on` is below the
+requested `--severity`, the scan severity is widened automatically so the gate can
+observe those findings.
+
+### Incomplete scans
+
+If a scanner cannot run, results may be missing findings rather than genuinely
+clean. DockSec reports that as a detection gap in the Coverage block and in
+`--json` under `scan_info.completeness`. Use `--incomplete-policy fail` to exit `3`
+in that case, so CI cannot pass on a scan that did not finish:
+
+```bash
+docksec Dockerfile --incomplete-policy fail
+```
+
+### Priority: what to fix first
+
+Every CVE finding is scored against [EPSS](https://www.first.org/epss/), which
+estimates the probability it will be exploited in the next 30 days. Combining that
+with severity gives four tiers:
+
+| Tier | Meaning |
+|---|---|
+| **Fix Now** | Critical or high severity, and in the top 10% of CVEs by exploitation likelihood |
+| **Fix Soon** | Critical or high severity, but exploitation is less common |
+| **Monitor** | Lower severity, but actively exploited |
+| **Low Priority** | Lower severity, exploitation uncommon |
+
+This is the only network call DockSec makes outside the AI pass, and it is
+deliberately narrow: **only CVE IDs are sent** - no image names, no file contents,
+no paths. Scores are cached for 24 hours. `--offline` and `--no-epss` disable it,
+and any failure falls back to severity-only ranking rather than failing the scan.
+
+### Exploit chains
+
+A per-service view reports findings one at a time. DockSec also reports where
+separate findings combine into a single attack path:
+
+```text
+Exploit chains
+  [HIGH] 'web' is internet-facing and can reach 'db' with a committed credential
+      services: web, db
+      combines: compose-plaintext-secret-env, compose-no-network-segmentation
+      'web' accepts connections from outside the host and shares the default
+      network with 'db'. 'db' is not exposed directly, but its credential is in
+      the compose file, so compromising 'web' yields authenticated access to it.
+      Neither service looks critical on its own.
+      break it: Put 'db' on its own network that 'web' does not join, or move
+      POSTGRES_PASSWORD to a Docker secret.
+```
+
+Chain detection is rule-based, so it works with `--scan-only`, offline, and with
+no API key, and returns the same answer every run. The AI pass ranks and extends
+it rather than being required for it. Chains also appear in `--json` under
+`exploit_chains`.
+
+See the [exploit chains guide](docs/exploit-chains.md) for the full list and the
+[compose rule reference](docs/rules/README.md) for every rule they combine.
+
+### Fix commands
+
+Scans end with concrete commands rather than a list of identifiers, and a plain
+statement of how many findings they resolve:
+
+```text
+Fix commands
+  > apt-get install --only-upgrade -y libgnutls30=3.7.9-2+deb12u7
+      CRITICAL - 3.7.9-2+deb12u4 -> 3.7.9-2+deb12u7  (CVE-2026-33845 +6)
+
+Dockerfile changes
+  - [CRITICAL] Move the secret out of ENV; inject it at runtime (line 4)
+  - [HIGH] Add a non-root USER before CMD/ENTRYPOINT (line 7)
+
+Applying all of the above resolves 37 of 93 finding(s); 56 have no mechanical fix yet.
+```
 
 ### Machine-readable output
 
@@ -326,8 +454,7 @@ files and print JSON in the same run. All human-readable messages move to stderr
 
 ### Report formats
 
-`--format` accepts a comma-separated list of file outputs. The four built-in report
-types are:
+`--format` accepts a comma-separated list of file outputs:
 
 | Format | What you get |
 |--------|----------------|
@@ -335,6 +462,10 @@ types are:
 | `csv` | A `.csv` table of findings (ID, severity, package, version, title, and related fields). |
 | `pdf` | A printable PDF summary with scan info, scores, and vulnerability details. |
 | `html` | A styled HTML report for browsing results in a browser. |
+| `markdown` | A `.md` report that renders natively in pull request comments and CI job summaries. Opt-in: not written unless requested. |
+
+`json`, `csv`, `pdf`, and `html` are written by default; add `markdown` explicitly to
+get it.
 
 **CSV with zero findings:** if a scan reports no vulnerabilities but `csv` is in your
 `--format` list, DockSec still writes a CSV file containing only the column headers.
@@ -344,23 +475,6 @@ rely on a stable schema even on clean scans.
 For stdout JSON and piping into other tools, see [Machine-readable output](#machine-readable-output)
 above. For CI and GitHub Code Scanning, use `--sarif` (see the next section); SARIF is
 separate from `--format` and is always emitted when requested.
-
-### Report formats
-
-The `--format` flag controls which report files DockSec generates.
-
-| Format | Description |
-| --- | --- |
-| `json` | Structured machine-readable report for automation and integrations. See the [Machine-readable output](#machine-readable-output) section for details on JSON output behavior. |
-| `csv` | Tabular report suitable for spreadsheets, reporting pipelines, and bulk analysis of findings. |
-| `pdf` | Human-readable report designed for sharing, review, and archival purposes. |
-| `html` | Interactive browser-based report with formatted findings and navigation for easier review. |
-
-> **Note**
->
-> When no vulnerabilities are found, CSV output is still generated with column headers only and no data rows. This header-only CSV is intentional behavior and does not indicate an error.
-
-For GitHub Code Scanning integration details, see the [SARIF output for GitHub Code Scanning](#sarif-output-for-github-code-scanning) section.
 
 ### SARIF output for GitHub Code Scanning
 
@@ -565,6 +679,42 @@ command updates the DockSec section in place instead of duplicating it.
 DockSec is the only one of these that pairs contextual Dockerfile remediation with a fully open source, OWASP-governed, locally runnable design. Snyk and Aikido offer capable AI remediation, but only as commercial cloud platforms that send your data to their service. Trivy is open source and local but stops at detection and does not help you fix anything. DockSec fills the gap for developers and for regulated or air-gapped teams who need both the fix guidance and full control of their data, at no cost.
 
 ---
+
+## Applying fixes automatically
+
+`--fix` applies the mechanical subset of the suggested Dockerfile changes,
+re-scans, and reports the delta:
+
+```bash
+docksec Dockerfile --scan-only --fix --dry-run   # print the diff, change nothing
+docksec Dockerfile --scan-only --fix             # apply, keeping a .bak
+```
+
+```text
+Applied 4 change(s)
+  - added --no-install-recommends on line(s) 2  [DS029]
+  - converted ADD to COPY on line(s) 3  [DL3020]
+  - replaced 'USER root' with 'USER appuser' on line 5  [DS002]
+  - inserted a placeholder HEALTHCHECK before line 6  [DS026]
+
+Original saved to Dockerfile.bak
+Dockerfile findings: 7 -> 2 (5 resolved)
+```
+
+It is deliberately conservative. It will not choose a base image version, move a
+secret, convert an `ADD` that fetches a URL or unpacks an archive, or edit a
+compose file - those are reported under "Needs review" instead. It also refuses
+to edit a file with uncommitted changes unless `--force` is given, so git is
+always in a position to undo the change.
+
+## Documentation
+
+| Guide | What it covers |
+| --- | --- |
+| [Evaluation guide](docs/evaluation-guide.md) | 15-minute assessment, including what DockSec does *not* do |
+| [Exploit chains](docs/exploit-chains.md) | Cross-service attack paths, and their limits |
+| [Compose rule reference](docs/rules/README.md) | All 17 rules: what each catches, and when keeping it is reasonable |
+| [CI integration](docs/ci/README.md) | Jenkins, GitLab, Azure Pipelines, pre-commit |
 
 ## Roadmap
 

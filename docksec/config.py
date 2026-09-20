@@ -147,49 +147,7 @@ def summarize_vulnerabilities(vulnerabilities: List[Dict[str, Any]], max_count: 
     
     return summary
 
-docker_agent_template = """
-Analyze Dockerfile for security. Output ONLY JSON:
-{{
-    "vulnerabilities": [],
-    "best_practices": [],
-    "SecurityRisks": [],
-    "ExposedCredentials": [],
-    "remediation": []
-}}
-Dockerfile:
-{filecontent}
-"""
-
-docker_score_template = """
-Score Docker security 1-100. Output ONLY JSON: {{"score": N}}
-90-100: Excellent, 70-89: Good, 50-69: Fair, 0-49: Poor.
-Summary:
-{results}
-"""
-
-
-def _build_prompt(template: str, input_variables: List[str]):
-    """Build a LangChain PromptTemplate on demand.
-
-    langchain-core is part of the optional [ai] extra, so the import lives
-    here rather than at module level: the core (scan-only) install imports
-    docksec.config for RESULTS_DIR and helpers without pulling in LangChain.
-    """
-    try:
-        from langchain_core.prompts import PromptTemplate
-    except ImportError:
-        raise ImportError(
-            "AI analysis requested but the AI dependencies are not installed. "
-            "Install them with: pip install \"docksec[ai]\""
-        )
-    return PromptTemplate(input_variables=input_variables, template=template)
-
-
-def __getattr__(name: str):
-    # PEP 562 lazy attributes: prompts are only materialized (and LangChain
-    # only imported) when an AI code path actually asks for them.
-    if name == "docker_agent_prompt":
-        return _build_prompt(docker_agent_template, ["filecontent"])
-    if name == "docker_score_prompt":
-        return _build_prompt(docker_score_template, ["results"])
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+# Both prompt templates and the PromptTemplate lazy-loader that built them were
+# removed. Scoring is deterministic and no longer calls a model, and the
+# analysis prompt lives in docksec/ai_analysis.py, where it is versioned and
+# covered by a golden-file test.

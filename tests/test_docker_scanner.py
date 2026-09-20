@@ -34,14 +34,10 @@ class TestDockerSecurityScanner(unittest.TestCase):
         return self.test_dockerfile
     
     @patch('docksec.docker_scanner.subprocess.run')
-    @patch('docksec.docker_scanner.get_llm')
-    def test_init_with_valid_inputs(self, mock_llm, mock_subprocess):
+    def test_init_with_valid_inputs(self, mock_subprocess):
         """Test initialization with valid inputs."""
         # Mock subprocess calls for tool checking and docker image inspect
         mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
-        
-        # Mock LLM
-        mock_llm.return_value = Mock()
         
         dockerfile = self.create_test_dockerfile()
         
@@ -89,17 +85,40 @@ class TestDockerSecurityScanner(unittest.TestCase):
                 DockerSecurityScanner._validate_image_name(name)
     
     def test_validate_file_path(self):
-        """Test file path validation."""
+        """Test file path validation.
+
+        Paths containing '..' are no longer rejected outright: the check blocked
+        the legitimate monorepo invocation `docksec ../service/Dockerfile` while
+        protecting nothing, since the path comes from the user's own command
+        line and is read with their own permissions. Validation now resolves the
+        path and rejects what cannot be scanned.
+        """
         from docksec.docker_scanner import DockerSecurityScanner
-        
-        # Path traversal attempts should be rejected
+
+        # Empty paths are rejected
         with self.assertRaises(ValueError):
-            DockerSecurityScanner._validate_file_path("../../../etc/passwd")
-        
+            DockerSecurityScanner._validate_file_path("")
+
+        # A directory is not a Dockerfile
+        with self.assertRaises(ValueError):
+            DockerSecurityScanner._validate_file_path(self.test_dir)
+
         # Valid path should work
         dockerfile = self.create_test_dockerfile()
         result = DockerSecurityScanner._validate_file_path(dockerfile)
         self.assertTrue(result.exists())
+
+        # A relative path that traverses upward is valid input
+        parent_relative = os.path.join(
+            "..", os.path.basename(self.test_dir), "Dockerfile"
+        )
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(self.test_dir)
+            resolved = DockerSecurityScanner._validate_file_path(parent_relative)
+            self.assertEqual(resolved, Path(dockerfile).resolve())
+        finally:
+            os.chdir(original_cwd)
     
     def test_validate_severity(self):
         """Test severity validation."""
@@ -130,7 +149,7 @@ class TestDockerSecurityScanner(unittest.TestCase):
         
         self.create_test_dockerfile()
         
-        with patch('docksec.docker_scanner.get_llm'):
+        if True:  # get_llm is no longer imported in docker_scanner (scoring is deterministic)
             scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
             scanner.required_tools = ['docker', 'trivy']
             missing = scanner._check_tools()
@@ -374,25 +393,41 @@ class TestDockerSecurityScanner(unittest.TestCase):
             shutil.rmtree(temp_dir)
     
     @patch('docksec.docker_scanner.subprocess.run')
-    @patch('docksec.docker_scanner.get_llm')
-    def test_init_with_skip_ai_scoring_flag(self, mock_llm, mock_subprocess):
-        """Test initialization with skip_ai_scoring flag."""
+    def test_scoring_is_always_deterministic(self, mock_subprocess):
+        """Scoring never calls a model, whatever skip_ai_scoring says.
+
+        Asking a model to "Score Docker security 1-100" meant two runs over
+        identical inputs could disagree, which is indefensible for a number a CI
+        gate and a compliance report both depend on.
+        """
         mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
-        
         dockerfile = self.create_test_dockerfile()
-        
+
         from docksec.docker_scanner import DockerSecurityScanner
-        
-        # With skip_ai_scoring=True, score_chain should be None
-        scanner = DockerSecurityScanner(dockerfile, "test:latest", skip_ai_scoring=True)
-        self.assertIsNone(scanner.score_chain)
-        
-        # With skip_ai_scoring=False, score_chain should be initialized
-        mock_llm.return_value = Mock()
-        scanner2 = DockerSecurityScanner(dockerfile, "test:latest", skip_ai_scoring=False)
-        # Score chain is initialized if get_llm doesn't raise
-        if mock_llm.call_count > 1:  # Called again for this scanner
-            self.assertIsNotNone(scanner2.score_chain)
+
+        for skip in (True, False):
+            with self.subTest(skip_ai_scoring=skip):
+                scanner = DockerSecurityScanner(
+                    dockerfile, "test:latest", skip_ai_scoring=skip
+                )
+                self.assertIsNone(scanner.score_chain)
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_identical_inputs_produce_identical_scores(self, mock_subprocess):
+        mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
+        dockerfile = self.create_test_dockerfile()
+
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        results = {
+            "dockerfile_scan": {"success": False, "output": "x", "skipped": False},
+            "image_scan": {"success": True, "output": "", "skipped": False},
+            "json_data": [{"VulnerabilityID": "CVE-1", "Severity": "HIGH"}],
+            "dockerfile_path": dockerfile,
+        }
+        scanner = DockerSecurityScanner(dockerfile, "test:latest")
+        scores = {scanner.get_security_score(results) for _ in range(5)}
+        self.assertEqual(len(scores), 1, f"score varied across runs: {scores}")
 
     @patch('docksec.docker_scanner.subprocess.run')
     def test_scan_image_json_success(self, mock_run):
@@ -432,25 +467,61 @@ class TestDockerSecurityScanner(unittest.TestCase):
         self.assertEqual(results['image_name'], "test:latest")
         self.assertTrue(results['image_scan']['success'])
 
-    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_dockerfile')
+    @patch('docksec.findings.scan_dockerfile_findings')
     @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image')
     @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image_json')
-    def test_run_full_scan(self, mock_json, mock_image, mock_dockerfile):
-        """Test full scan workflow."""
+    def test_run_full_scan(self, mock_json, mock_image, mock_findings):
+        """Test full scan workflow.
+
+        The Dockerfile pass now yields structured findings from Hadolint and
+        Trivy's config scanner rather than a text blob, so it is mocked at
+        docksec.findings.scan_dockerfile_findings.
+        """
         from docksec.docker_scanner import DockerSecurityScanner
-        
-        mock_dockerfile.return_value = (True, None)
+
+        mock_findings.return_value = ([], [])
         mock_image.return_value = (True, "output")
         mock_json.return_value = (True, [])
-        
+
         scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
         scanner.image_name = "test:latest"
         scanner.dockerfile_path = "Dockerfile"
         scanner.use_cache = False
-        
+
         results = scanner.run_full_scan()
         self.assertEqual(results['image_name'], "test:latest")
+        # No findings and no scanner errors: the Dockerfile pass succeeded.
         self.assertTrue(results['dockerfile_scan']['success'])
+
+    @patch('docksec.findings.scan_dockerfile_findings')
+    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image')
+    @patch('docksec.docker_scanner.DockerSecurityScanner.scan_image_json')
+    def test_run_full_scan_merges_dockerfile_findings(self, mock_json, mock_image, mock_findings):
+        """Dockerfile findings must land in json_data so they reach scoring,
+        reports, SARIF, and the --fail-on gate."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        mock_findings.return_value = ([
+            {
+                "VulnerabilityID": "DS002",
+                "Severity": "HIGH",
+                "Title": "Image user should not be 'root'",
+                "PkgName": "dockerfile",
+                "Line": 7,
+            }
+        ], [])
+        mock_image.return_value = (True, "output")
+        mock_json.return_value = (True, [])
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = "test:latest"
+        scanner.dockerfile_path = "Dockerfile"
+        scanner.use_cache = False
+
+        results = scanner.run_full_scan()
+        ids = [v["VulnerabilityID"] for v in results["json_data"]]
+        self.assertIn("DS002", ids)
+        self.assertFalse(results['dockerfile_scan']['success'])
 
     @patch('docksec.docker_scanner.subprocess.run')
     def test_advanced_scan_success(self, mock_run):

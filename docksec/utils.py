@@ -34,7 +34,7 @@ from docksec.config import (
 )
 from docksec.enums import LLMProvider
 try:
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, field_validator
 except ImportError:
     try:
         from langchain_core.pydantic_v1 import BaseModel, Field
@@ -114,11 +114,144 @@ def load_docker_file(docker_file_path: Optional[str] = None) -> Optional[str]:
     return docker_file
 
 class AnalyzesResponse(BaseModel):
+    """Historical AI response shape: five lists of free-text strings.
+
+    Retained because `analyze_security` and the report writers still accept it,
+    and because a user on an older model may still produce it. New analysis uses
+    `CorrelatedAnalysis` below, which can be anchored to a line, sorted by
+    severity, and rendered into SARIF - none of which free text supports.
+    """
     vulnerabilities: List[str] = Field(description="List of vulnerabilities found in the Dockerfile")
     best_practices: List[str] = Field(description="Best practices to follow to mitigate these vulnerabilities")
     SecurityRisks: List[str] = Field(description= "security risks associated with Dockerfile")
     ExposedCredentials: List[str] = Field(description="List of exposed credentials in the Dockerfile")
     remediation: List[str] = Field(description="List of remediation steps to fix the vulnerabilities")
+
+
+class AIFinding(BaseModel):
+    """One prioritized finding, grounded in the scan output."""
+
+    finding_id: str = Field(
+        description=(
+            "The scanner ID this refers to (CVE-2021-44228, DS002, "
+            "compose-privileged). Use the IDs given in the scan data; do not "
+            "invent one. Use 'ANALYSIS' only for an issue visible in the file "
+            "that no scanner reported."
+        )
+    )
+    title: str = Field(description="Short description of the issue, under 100 characters")
+    severity: str = Field(description="CRITICAL, HIGH, MEDIUM, or LOW")
+    category: str = Field(
+        description=(
+            "One of: vulnerability, credential, misconfiguration, "
+            "supply-chain, hardening"
+        )
+    )
+    line: Optional[int] = Field(
+        default=None,
+        description=(
+            "Line number in the analysed file, when the issue is at a specific "
+            "line. Use the line numbers given in the scan data; do not guess."
+        ),
+    )
+    why_it_matters: str = Field(
+        description=(
+            "What an attacker gains in THIS container's configuration. Not a "
+            "restatement of the CVE description."
+        )
+    )
+    fix: str = Field(description="The concrete change to make. Prefer an exact edit over advice.")
+    confidence: str = Field(
+        description=(
+            "high when the scan data alone supports this, medium when it rests "
+            "on a likely assumption, low when it is a hypothesis worth checking"
+        )
+    )
+
+
+class ExploitChain(BaseModel):
+    """Several findings that combine into one exploitable path.
+
+    The differentiating output: per-artifact scanners see the parts, not the
+    path. A weak credential is one finding; a weak credential on a service
+    published to 0.0.0.0 that shares a network with an internet-facing service
+    is a chain.
+    """
+
+    title: str = Field(description="Short name for the chain, under 100 characters")
+    severity: str = Field(description="Severity of the chain as a whole: CRITICAL, HIGH, MEDIUM, or LOW")
+    finding_ids: List[str] = Field(description="The scanner IDs that combine to form this chain")
+    services: List[str] = Field(
+        default_factory=list,
+        description="Compose services involved, when the chain spans services",
+    )
+    narrative: str = Field(
+        description="The attack path in order: entry point, what it reaches, what it yields"
+    )
+    fix: str = Field(description="The single change that breaks the chain most effectively")
+
+
+def _coerce_to_list(value):
+    """Accept a JSON-encoded string where a list is expected.
+
+    On larger inputs a model sometimes returns a nested field as a JSON string
+    rather than a list - observed with a 19-finding compose stack, where the
+    whole analysis was discarded by a validation error even though the content
+    was correct and complete. Parsing it costs nothing and turns a total loss
+    into a usable result.
+    """
+    if isinstance(value, str):
+        import json as _json
+
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = _json.loads(text)
+        except ValueError:
+            return []
+        # Some replies wrap the list in its own field name.
+        if isinstance(parsed, dict):
+            for candidate in ("chains", "findings", "items"):
+                if isinstance(parsed.get(candidate), list):
+                    return parsed[candidate]
+            return []
+        if isinstance(parsed, list):
+            return parsed
+        return []
+    return value
+
+
+class CorrelatedAnalysis(BaseModel):
+    """Structured output of the correlation pass."""
+
+    summary: str = Field(
+        description=(
+            "Two or three sentences: the most important thing about this "
+            "container's security posture and what to do first."
+        )
+    )
+    findings: List[AIFinding] = Field(
+        default_factory=list,
+        description=(
+            "Findings that materially matter, most severe first. An empty list "
+            "is valid when nothing is material."
+        ),
+    )
+    chains: List[ExploitChain] = Field(
+        default_factory=list,
+        description=(
+            "Exploit chains where separate findings combine. Empty when no "
+            "findings genuinely combine - do not invent one."
+        ),
+    )
+
+    # Runs before validation, so a JSON-encoded list is parsed rather than
+    # rejected. Without this a single mis-shaped field discards the whole
+    # analysis; see _coerce_to_list.
+    _coerce_findings = field_validator("findings", mode="before")(_coerce_to_list)
+    _coerce_chains = field_validator("chains", mode="before")(_coerce_to_list)
+
 
 class ScoreResponse(BaseModel):
     score: float = Field(description="Security score for the Dockerfile")

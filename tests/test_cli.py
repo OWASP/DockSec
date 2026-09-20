@@ -401,19 +401,32 @@ class TestCLIHelpers(unittest.TestCase):
     def test_quick_take_reports_vulnerabilities_and_lint(self):
         from docksec.cli import _quick_take_lines
 
+        # Dockerfile issues are structured findings now, not a text blob, so the
+        # Quick take reports the most severe one by ID and line rather than
+        # counting lines of Hadolint output.
         results = {
             "dockerfile_scan": {
                 "skipped": False,
                 "success": False,
-                "output": "/x/Dockerfile:2 DL3020 error: Use COPY instead of ADD",
+                "output": "1 Dockerfile issue(s) - HIGH: 1",
             },
+            "dockerfile_findings": [
+                {
+                    "VulnerabilityID": "DS002",
+                    "Severity": "HIGH",
+                    "Title": "Image user should not be 'root'",
+                    "Line": 7,
+                },
+            ],
         }
         counts = {"CRITICAL": 1, "HIGH": 2, "MEDIUM": 0, "LOW": 0}
         lines = _quick_take_lines(results, counts, run_ai=True)
         joined = " ".join(lines)
         self.assertIn("3 security findings", joined)
         self.assertIn("1 critical", joined)
-        self.assertIn("Dockerfile lint issues", joined)
+        self.assertIn("Dockerfile issue(s)", joined)
+        self.assertIn("DS002", joined)
+        self.assertIn("line 7", joined)
 
     def test_quick_take_suggests_ai_when_scan_only(self):
         from docksec.cli import _quick_take_lines
@@ -706,12 +719,15 @@ class TestJsonOutput(unittest.TestCase):
 
     def test_json_flag_without_format_writes_no_reports(self):
         _, _, scanner = self._run_image_only_json()
-        scanner.generate_all_reports.assert_called_once_with({
-            'json_data': [],
-            'dockerfile_scan': {'skipped': True},
-            'image_scan': {'skipped': False},
-            'scan_mode': 'image_only',
-        }, formats=[])
+        scanner.generate_all_reports.assert_called_once()
+        args, kwargs = scanner.generate_all_reports.call_args
+        # The point of the test: --json alone writes no report files.
+        self.assertEqual(kwargs.get('formats'), [])
+        # The results dict is passed through; it also carries scan metadata
+        # (completeness, epss_enabled) that this test does not pin down.
+        results = args[0]
+        self.assertEqual(results['json_data'], [])
+        self.assertEqual(results['scan_mode'], 'image_only')
 
     def test_json_flag_with_format_passes_requested_formats(self):
         _, _, scanner = self._run_image_only_json(extra_argv=['--format', 'json'])

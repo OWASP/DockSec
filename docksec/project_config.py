@@ -54,7 +54,9 @@ CONFIG_FILENAMES = (".docksec.yml", ".docksec.yaml")
 
 SCHEMA_URL = "https://owasp.org/DockSec/docksec-config-schema.json"
 
-VALID_FORMATS = ("json", "csv", "pdf", "html")
+# Must stay in step with the --format choices in cli.py; a test asserts they
+# match. Omitting "markdown" here made a documented config value a hard error.
+VALID_FORMATS = ("json", "csv", "pdf", "html", "markdown")
 
 
 class RulesConfig(BaseModel):

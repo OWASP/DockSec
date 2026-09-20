@@ -1,0 +1,54 @@
+# Keep the build context minimal and prevent local-only files from being baked
+# into a published image. /github/workspace is where the Action mounts the
+# user's repository, so anything copied there also ships to every user.
+
+# Local-only AI assistant context (gitignored; must not reach a public artifact)
+CLAUDE.md
+.cursorrules
+.claude/
+.cursor/
+
+# Local strategy and review notes
+docs/promptfoo-benchmark-review.md
+docs/docksec-strategy-2026.md
+docs/cve-lite-cli-comparison.md
+
+# VCS and CI
+.git/
+.github/
+.gitignore
+
+# Python build and cache artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+venv/
+.venv/
+env/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+tests/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local environment and scan output
+.env
+.env.*
+!.env.example
+docksec_results/
+*.log
+
+# Images used only by the README
+images/

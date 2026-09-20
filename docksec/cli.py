@@ -9,9 +9,9 @@ def get_version() -> str:
     """Return the installed package version.
 
     Resolution order:
-    1. importlib.metadata  — works when installed via pip
-    2. setup.py on disk    — works when running from source
-    3. 'unknown'           — last resort fallback
+    1. importlib.metadata   — works when installed via pip
+    2. pyproject.toml       — works when running from a source checkout
+    3. 'unknown'            — last resort fallback
     """
     try:
         from importlib.metadata import version
@@ -21,12 +21,18 @@ def get_version() -> str:
 
     try:
         import re
-        setup_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'setup.py')
-        with open(setup_path, 'r') as f:
-            match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', f.read())
+        pyproject = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), 'pyproject.toml'
+        )
+        with open(pyproject, 'r', encoding='utf-8') as f:
+            # Match the version in [project] only, not a version constraint in
+            # a dependency specifier further down the file.
+            match = re.search(
+                r'^\s*version\s*=\s*["\']([^"\']+)["\']', f.read(), re.MULTILINE
+            )
             if match:
                 return match.group(1)
-    except Exception:  # setup.py missing or unreadable; fall through to unknown
+    except Exception:  # pyproject missing or unreadable; fall through to unknown
         pass
 
     return "unknown"
@@ -181,7 +187,7 @@ def main() -> None:
                        help='LLM provider to use (default: openai, can also set LLM_PROVIDER env var)')
     parser.add_argument('--model', help='Model name to use (e.g., gpt-4o, claude-haiku-4-5, gemini-1.5-pro, llama3.1)')
     parser.add_argument('--compact-output', action='store_true', help='Use compact output format (less verbose)')
-    parser.add_argument('--skip-ai-scoring', action='store_true', default=None, help='Skip AI-based security scoring (use local scoring only)')
+    parser.add_argument('--skip-ai-scoring', action='store_true', default=None, help='Deprecated and ignored: scoring is always deterministic. Removed in a future release.')
     parser.add_argument('--severity', help='Comma-separated severity levels to scan for (default: CRITICAL,HIGH; or set DOCKSEC_DEFAULT_SEVERITY)')
     parser.add_argument('--fail-on', dest='fail_on', metavar='SEVERITY', help='Exit with code 1 if any finding is at or above this severity (CRITICAL, HIGH, MEDIUM, or LOW)')
     parser.add_argument('--format', dest='format', help='Comma-separated report formats to write: json, csv, pdf, html, markdown (default: all)')
@@ -190,6 +196,11 @@ def main() -> None:
     parser.add_argument('--sarif', dest='sarif', action='store_true', help='Write a SARIF 2.1.0 report for GitHub Code Scanning and other SARIF-compatible tools')
     parser.add_argument('--sbom', dest='sbom', action='store_true', help='Write a CycloneDX SBOM (.cdx.json) of the scanned image for supply-chain tooling (requires an image)')
     parser.add_argument('--offline', dest='offline', action='store_true', default=None, help='Run without network access: use the local Trivy DB (no DB update) and skip AI analysis')
+    parser.add_argument('--fix', dest='fix', action='store_true', help='Apply the safe subset of the suggested Dockerfile changes, keep a .bak, and re-scan to show the delta. Refuses to run on a dirty git working tree unless --force is given.')
+    parser.add_argument('--dry-run', dest='dry_run', action='store_true', help='With --fix, print the diff without writing anything')
+    parser.add_argument('--force', dest='force', action='store_true', help='With --fix, apply changes even when the git working tree has uncommitted changes to the target file')
+    parser.add_argument('--no-epss', dest='no_epss', action='store_true', default=None, help='Skip the EPSS exploitation-likelihood lookup and rank findings by severity alone (only CVE IDs are ever sent; implied by --offline)')
+    parser.add_argument('--incomplete-policy', dest='incomplete_policy', choices=['warn', 'fail'], default='warn', help="What to do when a scanner could not run: 'warn' reports the gap and continues (default), 'fail' exits 3 so CI cannot pass on an incomplete scan")
     parser.add_argument('--no-redact', dest='no_redact', action='store_true', default=None, help='Do not mask secret-looking values before sending file content to the AI provider')
     parser.add_argument('--no-cache', dest='no_cache', action='store_true', default=None, help='Bypass the scan results cache and force a fresh scan')
     parser.add_argument('--ignore-file', dest='ignore_file', metavar='FILE', help='Path to an ignore file listing findings to suppress (default: .docksec-ignore.yml in the current directory, if present)')
@@ -239,6 +250,15 @@ def main() -> None:
     # Set compact output mode if requested
     if args.compact_output:
         os.environ["DOCKSEC_COMPACT_OUTPUT"] = "true"
+
+    # Deprecated flag. Scoring is deterministic now, so this is a no-op, but
+    # silently ignoring a flag someone has in a CI config is worse than either
+    # honouring it or erroring: warn for one release, then remove.
+    if args.skip_ai_scoring:
+        output.warn(
+            "--skip-ai-scoring is deprecated and has no effect: scoring is "
+            "always deterministic. The flag will be removed in a future release."
+        )
 
     # --no-cache: the scanner (and every per-service scanner in compose runs)
     # reads DOCKSEC_USE_CACHE at construction time.
@@ -323,6 +343,22 @@ def main() -> None:
         output.error("--update-baseline requires --baseline FILE")
         sys.exit(2)
 
+    # --fix edits a Dockerfile in place, so it needs one. Compose changes alter
+    # runtime topology and are deliberately never applied automatically.
+    if args.fix:
+        if args.compose:
+            output.error(
+                "--fix applies Dockerfile changes; compose changes alter runtime "
+                "topology and are reported for you to apply yourself."
+            )
+            sys.exit(2)
+        if not args.dockerfile:
+            output.error("--fix requires a Dockerfile path")
+            sys.exit(2)
+    elif args.dry_run:
+        output.error("--dry-run applies to --fix; it has no effect on its own")
+        sys.exit(2)
+
     if args.image_only and args.ai_only:
         output.error("--image-only and --ai-only cannot be used together (AI analysis requires a Dockerfile)")
         sys.exit(2)
@@ -386,19 +422,28 @@ def main() -> None:
         run_compose_analysis = False
         mode_desc = "Image-only Scan"
     elif args.ai_only:
+        # AI analysis correlates over scanner output, so the local Dockerfile
+        # scan still runs - it is fast, needs no image, and without it the model
+        # has nothing to correlate. What --ai-only now means is "do not scan an
+        # image": no registry pull, no Trivy image scan, no Docker Scout.
         run_ai = True
-        run_scan = False
+        run_scan = True
         run_compose_analysis = False
-        mode_desc = "AI Analysis Only"
+        args.image = None
+        mode_desc = "AI Analysis (Dockerfile only)"
     elif args.scan_only:
         run_ai = False
         run_scan = True
         run_compose_analysis = False
         mode_desc = "Security Scan Only"
     else:
-        # Default: run both AI and scan if both Dockerfile and image are provided
+        # Default mode. The scan pass runs whenever there is anything to scan -
+        # a Dockerfile alone now yields structured findings from Hadolint and
+        # Trivy's config scanner, so it no longer requires an image. This also
+        # matters for the AI pass, which correlates over scanner output and so
+        # runs inside the scan block.
         run_ai = bool(args.dockerfile)
-        run_scan = bool(args.image)
+        run_scan = bool(args.image) or bool(args.dockerfile)
         run_compose_analysis = False
         mode_desc = "Full Analysis (AI + Scanner)"
     
@@ -428,83 +473,55 @@ def main() -> None:
     # Initialize AI findings storage
     ai_findings = None
     
-    # Run the AI-based recommendation tool
+    # Prepare the file content for the AI pass, but do not call the model yet.
+    # The analysis runs after the scan so it can correlate against real scanner
+    # output; loading and redacting here keeps the failure modes (missing file,
+    # unreadable content) next to the other input validation.
     ai_ok = None  # None = AI not run, True = success, False = failed
+    ai_file_content = None
+    ai_file_type = None
     if run_ai:
-        output.section("AI-based Dockerfile analysis")
-        try:
-            # Import required modules from main.py
-            from docksec.utils import (
-                load_docker_file,
-                get_llm,
-                analyze_security,
-                AnalyzesResponse
-            )
-            from docksec.config import docker_agent_prompt, truncate_dockerfile
-            from pathlib import Path
-            
-            # Set up the same components as main.py
-            llm = get_llm()
-            
-            # Use appropriate structured output method based on provider
-            config = get_config()
-            provider = config.llm_provider
-            
-            if provider == LLMProvider.OPENAI:
-                Report_llm = llm.with_structured_output(AnalyzesResponse, method="json_mode")
-            else:
-                # For Anthropic, Google, and Ollama, let LangChain choose the best method (usually tool calling)
-                Report_llm = llm.with_structured_output(AnalyzesResponse)
-                
-            analyser_chain = docker_agent_prompt | Report_llm
-            
-            # Load and analyze the file
-            if run_compose_analysis:
-                filecontent = load_docker_file(docker_file_path=Path(args.compose))
-                file_type = "docker-compose file"
-            else:
-                filecontent = load_docker_file(docker_file_path=Path(args.dockerfile))
-                file_type = "Dockerfile"
-            
-            if not filecontent:
-                output.error(f"No {file_type} content found.")
-                return
+        from pathlib import Path
 
-            # Redact secret-looking values before the content leaves the
-            # machine. Keys stay visible so the model can still flag exposed
-            # credentials; the secret material itself is masked.
-            if not args.no_redact:
-                from docksec.redact import redact_content
-                filecontent, redacted_count = redact_content(filecontent)
-                if redacted_count:
-                    output.info(
-                        f"Masked {redacted_count} secret-looking value(s) before AI analysis "
-                        f"(--no-redact to disable)"
-                    )
+        from docksec.config import truncate_dockerfile
+        from docksec.utils import load_docker_file
 
-            # Cap very large inputs to bound token usage; warn when anything
-            # is dropped so a partial analysis is never mistaken for a full one.
-            if run_compose_analysis:
-                truncated_content = truncate_dockerfile(filecontent, max_lines=600, max_chars=24000)
-            else:
-                truncated_content = truncate_dockerfile(filecontent, max_lines=400, max_chars=16000)
-            if truncated_content != filecontent:
-                output.warn(
-                    f"{file_type} is very large; AI analysis covers only the first part "
-                    f"of the file. Scanner results (Trivy/Hadolint) are unaffected."
+        if run_compose_analysis:
+            ai_file_type = "docker-compose file"
+            ai_file_content = load_docker_file(docker_file_path=Path(args.compose))
+        else:
+            ai_file_type = "Dockerfile"
+            ai_file_content = load_docker_file(docker_file_path=Path(args.dockerfile))
+
+        if not ai_file_content:
+            output.error(f"No {ai_file_type} content found.")
+            sys.exit(2)
+
+        # Redact secret-looking values before the content leaves the machine.
+        # Keys stay visible so the model can still flag exposed credentials;
+        # the secret material itself is masked.
+        if not args.no_redact:
+            from docksec.redact import redact_content
+            ai_file_content, redacted_count = redact_content(ai_file_content)
+            if redacted_count:
+                output.info(
+                    f"Masked {redacted_count} secret-looking value(s) before AI analysis "
+                    f"(--no-redact to disable)"
                 )
 
-            response = analyser_chain.invoke({"filecontent": truncated_content})
-            ai_findings = analyze_security(response, compact=True, report_path=output_dir)
-            ai_ok = True
+        # Cap very large inputs to bound token usage; warn when anything is
+        # dropped so a partial analysis is never mistaken for a full one.
+        if run_compose_analysis:
+            capped = truncate_dockerfile(ai_file_content, max_lines=600, max_chars=24000)
+        else:
+            capped = truncate_dockerfile(ai_file_content, max_lines=400, max_chars=16000)
+        if capped != ai_file_content:
+            output.warn(
+                f"{ai_file_type} is very large; AI analysis covers only the first part "
+                f"of the file. Scanner results are unaffected."
+            )
+        ai_file_content = capped
 
-        except ImportError as e:
-            output.error(f"Required modules not found - {e}")
-            sys.exit(3)
-        except Exception as e:
-            output.error(f"AI analysis failed: {e}")
-            ai_ok = False
-    
     # Run the scanner tool
     scan_ok = None  # None = scan not run, True = success, False = failed
     gate_triggered = False  # True when findings meet the --fail-on threshold
@@ -577,12 +594,61 @@ def main() -> None:
             # --json, or the --fail-on gate.
             _apply_disabled_rules(results, disabled_rules, output)
 
+            # EPSS exploitation likelihood, after suppressions so no request is
+            # made for a finding the team has already waived. Only CVE IDs are
+            # sent; any failure degrades to severity-only ranking and is
+            # recorded as a remediation gap rather than failing the scan.
+            epss_enabled = not args.no_epss and not args.offline
+            epss_candidates = sum(
+                1 for v in results.get("json_data", [])
+                if str(v.get("VulnerabilityID", "")).upper().startswith("CVE-")
+            )
+            epss_annotated = 0
+            if epss_enabled and epss_candidates:
+                from docksec import epss as epss_mod
+                epss_annotated = epss_mod.annotate(
+                    results["json_data"], cache_dir=scanner.RESULTS_DIR, enabled=True
+                )
+            results["epss_enabled"] = epss_enabled
+
+            # Record what this scan could not determine, before anything
+            # renders it.
+            from docksec import completeness as completeness_mod
+            scan_completeness = completeness_mod.build(
+                results,
+                dockerfile_errors=results.get("dockerfile_scan_errors"),
+                epss_enabled=epss_enabled,
+                epss_annotated=epss_annotated,
+                epss_candidates=epss_candidates,
+            )
+            results["completeness"] = scan_completeness.to_dict()
+
             # Calculate security score
             scanner.analysis_score = scanner.get_security_score(results)
 
-            # Add AI findings to results if available
-            if ai_findings:
-                results["ai_findings"] = ai_findings
+            # Cross-service exploit chains. Detected by rules over the compose
+            # topology, so the flagship output works with --scan-only, offline,
+            # and without an API key. The AI pass ranks and explains them; it is
+            # not load bearing for finding them.
+            compose_data = None
+            if run_compose_analysis:
+                from docksec import chains as chains_mod
+                compose_data = _load_compose_topology(args.compose)
+                detected = chains_mod.detect(compose_data, results.get("json_data"))
+                if detected:
+                    results["exploit_chains"] = chains_mod.to_ai_shape(detected)
+
+            # AI correlation pass. Runs here, after suppressions, disabled
+            # rules, EPSS tiering and scoring, so the model reasons over exactly
+            # the finding set the user will see - not a raw dump, and not
+            # findings the team has already waived.
+            if run_ai and ai_file_content:
+                output.section("AI correlation and triage")
+                ai_findings, ai_ok = _run_ai_correlation(
+                    output, ai_file_content, ai_file_type, results, compose_data
+                )
+                if ai_findings:
+                    results["ai_findings"] = ai_findings
 
             # Generate reports (all formats by default, or the requested subset)
             report_paths = scanner.generate_all_reports(results, formats=report_formats)
@@ -612,12 +678,43 @@ def main() -> None:
                 output.section("Advanced scan (Docker Scout)")
                 scanner.advanced_scan()
 
-            scan_ok = True
+            # A compose run whose services could not be scanned must not report
+            # success: the summary and score describe only the static rules, and
+            # exiting 0 would let CI pass on a scan that never inspected the
+            # images. Exit 3 (tool/runtime error) rather than 1, since this is a
+            # scan that did not complete, not a policy violation.
+            failed_services = _failed_service_names(results.get("failed_services"))
+            scan_ok = not failed_services
+
+            # --incomplete-policy fail: a detection gap means findings may be
+            # missing, so CI can choose to treat that as a failed scan rather
+            # than a clean one.
+            if args.incomplete_policy == "fail" and (results.get("completeness") or {}).get("has_detection_gap"):
+                scan_ok = False
+
             if args.json_stdout:
                 _print_json_results(results, scanner, report_paths)
             else:
                 _render_scan_summary(output, args, scanner, results, report_paths,
                                      run_ai, run_compose_analysis)
+
+            # --fix runs last, after the user has seen what was found: the
+            # changes only make sense in the context of the findings above.
+            if args.fix:
+                fix_applied = _apply_autofix(output, args, results)
+                if fix_applied is False:
+                    scan_ok = False
+
+            if failed_services:
+                total = results.get("total_services")
+                scope = (f"{len(failed_services)} of {total}"
+                         if isinstance(total, int) and total > 0
+                         else f"{len(failed_services)}")
+                output.error(
+                    f"{scope} service(s) could not be scanned: "
+                    f"{', '.join(failed_services)}. Results cover the compose "
+                    f"file's static rules only."
+                )
 
             # --update-baseline: snapshot current findings and skip gating.
             if args.update_baseline:
@@ -654,47 +751,10 @@ def main() -> None:
             output.error(f"Scanner failed: {e}")
             scan_ok = False
 
-    # AI-only report: when AI analysis ran but no scan did (e.g. a Dockerfile
-    # with no -i image, or --ai-only), the scan block above never generated a
-    # report. Write the AI findings out here so they're available in full,
-    # instead of leaving the user with only the truncated on-screen summary.
-    if run_ai and ai_ok and not run_scan and ai_findings and not args.json_stdout:
-        try:
-            from docksec.docker_scanner import DockerSecurityScanner
-            from datetime import datetime
-
-            ai_results = {
-                "dockerfile_scan": {
-                    "success": True,
-                    "output": "Skipped - AI analysis only",
-                    "skipped": True,
-                },
-                "image_scan": {
-                    "success": True,
-                    "output": "Skipped - AI analysis only",
-                    "skipped": True,
-                },
-                "json_data": [],
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "image_name": "N/A - AI analysis only",
-                "dockerfile_path": args.compose if run_compose_analysis else args.dockerfile,
-                "scan_mode": "compose" if run_compose_analysis else "ai_only",
-                "ai_findings": ai_findings,
-            }
-
-            ai_scanner = DockerSecurityScanner(
-                None, None, results_dir=output_dir, scan_only=True,
-                skip_ai_scoring=args.skip_ai_scoring,
-            )
-            report_paths = ai_scanner.generate_all_reports(ai_results, formats=report_formats)
-            if args.sarif:
-                report_paths["sarif"] = _generate_sarif_report(ai_scanner, ai_results)
-
-            if report_paths:
-                output.report_results(report_paths, output_dir)
-        except Exception as e:
-            output.error(f"Failed to write AI analysis report: {e}")
-            ai_ok = False
+    # The separate AI-only report path that used to live here is gone. It
+    # existed because the AI pass ran without a scan and so produced no report;
+    # the correlation pass now runs inside the scan block, which already writes
+    # reports containing the AI findings.
 
     # Exit codes (CI-friendly): 0 clean, 1 findings at/above --fail-on,
     # 2 usage error, 3 tool/runtime error.
@@ -707,6 +767,135 @@ def main() -> None:
 
     if gate_triggered:
         sys.exit(1)
+
+
+def _apply_autofix(output, args, results):
+    """Apply the safe subset of the fix plan to the Dockerfile.
+
+    Returns True on success, False when the run should be treated as failed, and
+    None when there was nothing to do. Refuses to edit a file with uncommitted
+    changes unless --force: git is the real undo, so the tool makes sure git is
+    in a position to help.
+    """
+    from docksec import autofix, remediation
+
+    dockerfile = args.dockerfile
+    findings = results.get("json_data") or []
+    plan = remediation.build_plan(findings, dockerfile)
+
+    applicable, needs_review = autofix.plan_edits(plan)
+    if not applicable:
+        output.section("Automatic fixes")
+        output.info("No automatically applicable changes for this Dockerfile.")
+        for edit in needs_review[:5]:
+            output.detail(f"  - {edit.get('instruction')} ({edit.get('reason')})")
+        return None
+
+    if not args.dry_run and not args.force:
+        dirty = autofix.working_tree_is_dirty(dockerfile)
+        if dirty:
+            output.error(
+                f"{dockerfile} has uncommitted changes. Commit or stash them "
+                f"first so the edits can be reviewed and reverted, or pass "
+                f"--force to edit anyway."
+            )
+            output.detail("  Preview the changes without writing: --fix --dry-run")
+            return False
+
+    output.section("Automatic fixes")
+    before = len(results.get("dockerfile_findings") or [])
+
+    try:
+        result = autofix.apply_to_dockerfile(
+            dockerfile, plan, dry_run=args.dry_run, backup=True
+        )
+    except OSError as exc:
+        output.error(f"Could not apply fixes to {dockerfile}: {exc}")
+        return False
+
+    if not result.applied:
+        output.info("Nothing to change: the applicable fixes are already in place.")
+        return None
+
+    if args.dry_run:
+        output.fix_diff(result.diff(os.path.basename(dockerfile)), result.applied,
+                        result.skipped, dry_run=True)
+        return True
+
+    result.findings_before = before
+    result.findings_after = autofix.rescan(dockerfile, offline=bool(args.offline))
+    output.fix_diff(result.diff(os.path.basename(dockerfile)), result.applied,
+                    result.skipped, dry_run=False,
+                    backup_path=result.backup_path,
+                    before=result.findings_before, after=result.findings_after)
+    return True
+
+
+def _load_compose_topology(compose_path):
+    """Parse the compose file for its service topology.
+
+    The topology - what each service publishes, mounts, and connects to - is
+    what makes cross-service correlation possible. A parse failure is not fatal:
+    the analysis degrades to per-service reasoning.
+    """
+    try:
+        from ruamel.yaml import YAML
+
+        with open(compose_path, "r", encoding="utf-8") as handle:
+            return YAML(typ="safe").load(handle)
+    except Exception as exc:  # noqa: BLE001 - topology is optional context
+        from docksec.utils import get_custom_logger
+        get_custom_logger(__name__).debug(f"Could not parse compose topology: {exc}")
+        return None
+
+
+def _run_ai_correlation(output, file_content, file_type, results, compose_data=None):
+    """Run the AI correlation pass over the scan output.
+
+    Returns ``(ai_findings, ok)``. A model failure is reported and returns
+    ``ok=False``; it never raises, because a scan that produced real findings
+    should still deliver them when the optional analysis layer is unavailable.
+    """
+    from docksec import ai_analysis
+    from docksec.config_manager import get_config
+    from docksec.enums import LLMProvider
+    from docksec.utils import CorrelatedAnalysis, get_llm
+
+    try:
+        llm = get_llm()
+        provider = get_config().llm_provider
+
+        # OpenAI needs json_mode for reliable structured output; the others do
+        # better with LangChain's default tool-calling path.
+        if provider == LLMProvider.OPENAI:
+            structured = llm.with_structured_output(CorrelatedAnalysis, method="json_mode")
+        else:
+            structured = llm.with_structured_output(CorrelatedAnalysis)
+
+        context = ai_analysis.build_context(
+            file_content, file_type, results=results, compose_data=compose_data
+        )
+        messages = ai_analysis.build_messages(context)
+
+        finding_count = len(results.get("json_data") or [])
+        output.info(
+            f"Correlating {finding_count} scanner finding(s) "
+            f"(prompt v{ai_analysis.PROMPT_VERSION})"
+        )
+
+        response = structured.invoke(messages)
+        analysis = ai_analysis.normalize_response(response)
+        output.ai_analysis(analysis)
+        return ai_analysis.to_legacy_shape(analysis), True
+
+    except ImportError as exc:
+        output.error(f"AI analysis needs the [ai] extra: {exc}")
+        output.detail('  Install it with: pip install "docksec[ai]"')
+        return None, False
+    except Exception as exc:  # noqa: BLE001 - the scan result still stands
+        output.error(f"AI analysis failed: {exc}")
+        output.detail("  Scanner findings above are unaffected.")
+        return None, False
 
 
 def _generate_sarif_report(scanner, results):
@@ -751,6 +940,7 @@ def _print_json_results(results, scanner, report_paths):
     import json as json_module
 
     from docksec import output
+    from docksec.score_calculator import SCORE_VERSION
 
     vulnerabilities = results.get("json_data", [])
     payload = {
@@ -759,11 +949,21 @@ def _print_json_results(results, scanner, report_paths):
             "dockerfile": results.get("dockerfile_path", "N/A"),
             "scan_time": results.get("timestamp", ""),
             "analysis_score": getattr(scanner, "analysis_score", None),
+            # Identifies the scoring model, so automation can distinguish a
+            # model change from a real change in posture.
+            "score_version": SCORE_VERSION,
             "scan_mode": results.get("scan_mode", "full"),
         },
         "vulnerabilities": vulnerabilities,
         "severity_counts": output.count_by_severity(vulnerabilities),
     }
+    from docksec import epss as epss_mod
+
+    if results.get("completeness"):
+        payload["scan_info"]["completeness"] = results["completeness"]
+    payload["priority_counts"] = epss_mod.counts_by_priority(vulnerabilities)
+    if results.get("exploit_chains"):
+        payload["exploit_chains"] = results["exploit_chains"]
     if results.get("suppressed_count"):
         payload["scan_info"]["suppressed_count"] = results["suppressed_count"]
         payload["scan_info"]["ignore_file"] = results.get("ignore_file")
@@ -780,16 +980,45 @@ def _print_json_results(results, scanner, report_paths):
 
 def _render_scan_summary(output, args, scanner, results, report_paths,
                          run_ai, run_compose_analysis):
-    """Render the consolidated result summary: severity table, score, a Quick
-    take action block, the generated reports, and a suggested next command."""
+    """Render the consolidated result summary.
+
+    Ordered so a reader gets the answer before the detail: what is here
+    (severity table, score), what to do first (priority tiers), what to run
+    (fix plan), and what was not checked (coverage).
+    """
+    from docksec import completeness as completeness_mod
+    from docksec import epss as epss_mod
+    from docksec import remediation as remediation_mod
+
     vulnerabilities = results.get("json_data", [])
     counts = output.count_by_severity(vulnerabilities)
 
     output.section("Results")
     output.severity_table(counts)
     output.score(getattr(scanner, "analysis_score", None))
+    output.priority_summary(epss_mod.counts_by_priority(vulnerabilities))
+
+    # Rule-detected chains render here so they appear with or without AI. When
+    # the AI pass ran it has already shown its own (richer) chain analysis, so
+    # these are not repeated.
+    if results.get("exploit_chains") and not results.get("ai_findings"):
+        output.ai_analysis({"chains": results["exploit_chains"]})
+
     output.quick_take(_quick_take_lines(results, counts, run_ai))
-    output.fix_commands(_suggest_fix_commands(results))
+
+    dockerfile_path = results.get("dockerfile_path")
+    if dockerfile_path and str(dockerfile_path).startswith("N/A"):
+        dockerfile_path = None
+    output.fix_plan(remediation_mod.build_plan(vulnerabilities, dockerfile_path))
+
+    gap_messages = [
+        gap["message"] for gap in (results.get("completeness") or {}).get("gaps", [])
+    ]
+    output.coverage(
+        completeness_mod.coverage_notes(results, ai_ran=bool(results.get("ai_findings"))),
+        gaps=gap_messages,
+    )
+
     if report_paths:
         output.report_results(report_paths, scanner.RESULTS_DIR)
     output.next_command(_suggest_next_command(args, results, run_ai, run_compose_analysis))
@@ -814,6 +1043,8 @@ def _failed_service_names(failed_services):
 
 def _quick_take_lines(results, counts, run_ai):
     """Build a few high-signal lines summarizing what matters most."""
+    from docksec.enums import Severity
+
     lines = []
 
     vulnerabilities = results.get("json_data", [])
@@ -828,13 +1059,18 @@ def _quick_take_lines(results, counts, run_ai):
         if fixable:
             lines.append(f"{fixable} of {total_vulns} have a fixed version available upstream")
 
-    dockerfile_scan = results.get("dockerfile_scan", {})
-    if not dockerfile_scan.get("skipped") and not dockerfile_scan.get("success"):
-        output_text = dockerfile_scan.get("output") or ""
-        issue_lines = [ln for ln in output_text.splitlines() if ln.strip()]
-        if issue_lines:
-            top = _format_hadolint_line(issue_lines[0].strip())
-            lines.append(f"{len(issue_lines)} Dockerfile lint issues; top: {top}")
+    # Dockerfile findings are structured and already counted in the severity
+    # table above; surface how many came from the Dockerfile specifically, since
+    # those are the ones the user can fix by editing a file they own.
+    dockerfile_findings = results.get("dockerfile_findings") or []
+    if dockerfile_findings:
+        worst = max(dockerfile_findings, key=lambda f: Severity.rank(f.get("Severity")))
+        location = f" (line {worst['Line']})" if worst.get("Line") else ""
+        lines.append(
+            f"{len(dockerfile_findings)} Dockerfile issue(s); most severe: "
+            f"{worst['VulnerabilityID']} [{worst['Severity']}] "
+            f"{worst['Title']}{location}"
+        )
 
     ai_findings = results.get("ai_findings") or {}
     exposed = ai_findings.get("exposed_credentials") or []
