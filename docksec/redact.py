@@ -65,11 +65,13 @@ _ENV_SPACE = re.compile(
     re.IGNORECASE,
 )
 
+_PURE_PLACEHOLDER = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+
 
 def _is_placeholder(value: str) -> bool:
-    """Interpolations and empty values carry no secret material."""
+    """Empty values and pure variable references carry no secret material."""
     stripped = value.strip().strip("\"'")
-    return not stripped or stripped.startswith("${") or stripped.startswith("$(")
+    return not stripped or _PURE_PLACEHOLDER.fullmatch(stripped) is not None
 
 
 def redact_content(content: str) -> Tuple[str, int]:
