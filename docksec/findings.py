@@ -160,13 +160,12 @@ def parse_hadolint_json(raw: str, target: str) -> List[Dict]:
 
 
 def parse_trivy_config_json(
-    raw: str, target: str, target_basename: Optional[str] = None
+    raw: str, target: str
 ) -> List[Dict]:
     """Convert ``trivy config -f json`` output into structured findings.
 
-    ``trivy config`` scans a directory, so its output can include other config
-    files that happen to sit beside the Dockerfile. ``target_basename`` limits
-    the results to the file actually being scanned.
+    Trivy is invoked with the specific Dockerfile path, so its output is expected
+    to contain findings for that Dockerfile only.
     """
     if not raw or not raw.strip():
         return []
@@ -179,10 +178,6 @@ def parse_trivy_config_json(
 
     findings = []
     for result in (payload or {}).get("Results") or []:
-        if target_basename:
-            result_target = str(result.get("Target") or "")
-            if os.path.basename(result_target) != target_basename:
-                continue
         for misconfig in result.get("Misconfigurations") or []:
             rule_id = normalize_rule_id(
                 misconfig.get("ID") or misconfig.get("AVDID") or ""
@@ -266,24 +261,20 @@ def run_hadolint(dockerfile_path: str) -> Tuple[bool, List[Dict], Optional[str]]
 
 
 def run_trivy_config(dockerfile_path: str, offline: bool = False) -> Tuple[bool, List[Dict], Optional[str]]:
-    """Run ``trivy config`` against the Dockerfile's directory.
+    """Run ``trivy config`` against the specified Dockerfile.
 
-    ``trivy config`` only accepts a directory - given a file it prints its usage
-    text and exits 0, which parses as "no findings" rather than an error. The
-    directory is scanned and the results are then filtered back down to the
-    target file. ``--file-patterns`` narrows the scan so an unusually named
-    Dockerfile (``Dockerfile.prod``) is still analyzed as one.
+    Trivy accepts a Dockerfile path directly, so scanning the parent directory
+    is unnecessary and can cause findings from nested Dockerfiles with the same
+    basename to be attributed to the requested Dockerfile.
     """
-    directory = os.path.dirname(os.path.abspath(dockerfile_path)) or "."
-    basename = os.path.basename(dockerfile_path)
+    dockerfile_path = os.path.abspath(dockerfile_path)
 
     cmd = [
         "trivy", "config", "-f", "json", "--quiet", "--skip-version-check",
-        "--file-patterns", f"dockerfile:{basename}",
     ]
     if offline:
         cmd.append("--skip-check-update")
-    cmd.append(directory)
+    cmd.append(dockerfile_path)
 
     try:
         result = subprocess.run(
@@ -309,7 +300,7 @@ def run_trivy_config(dockerfile_path: str, offline: bool = False) -> Tuple[bool,
     if not stdout.startswith("{"):
         return False, [], "Trivy config scan returned unexpected output (not JSON)"
 
-    return True, parse_trivy_config_json(stdout, dockerfile_path, basename), None
+    return True, parse_trivy_config_json(stdout, dockerfile_path), None
 
 
 def scan_dockerfile_findings(
