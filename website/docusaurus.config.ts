@@ -13,8 +13,8 @@ const config: Config = {
   // The site is served from GitHub Pages. owasp.org/DockSec/ can later be
   // pointed here as a redirect, the way owasp.org/cve-lite-cli/ is - that
   // needs no rebuild, because the canonical URL does not change.
-  url: 'https://owasp.github.io',
-  baseUrl: '/DockSec/',
+  url: 'https://docksec.owasp.org',
+  baseUrl: '/',
   organizationName: 'OWASP',
   projectName: 'DockSec',
   trailingSlash: false,
