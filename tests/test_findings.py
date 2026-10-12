@@ -7,6 +7,7 @@ secret-carrying Dockerfile.
 
 import json
 import unittest
+from unittest.mock import patch
 
 from docksec.findings import (
     HADOLINT_SEVERITY,
@@ -14,6 +15,7 @@ from docksec.findings import (
     deduplicate,
     parse_hadolint_json,
     parse_trivy_config_json,
+    run_trivy_config,
     summarize,
 )
 
@@ -87,20 +89,47 @@ class TestTrivyConfigParsing(unittest.TestCase):
         raw = _trivy_result([_misconfig("DS026", "LOW")])
         self.assertIsNone(parse_trivy_config_json(raw, "Dockerfile")[0]["Line"])
 
-    def test_results_for_other_files_are_filtered_out(self):
-        """trivy config scans a directory, so it can report on files beside the
-        Dockerfile."""
-        payload = json.dumps({"Results": [
-            {"Target": "Dockerfile", "Misconfigurations": [_misconfig("DS002")]},
-            {"Target": "other.yaml", "Misconfigurations": [_misconfig("DS999")]},
-        ]})
-        findings = parse_trivy_config_json(payload, "Dockerfile", target_basename="Dockerfile")
-        self.assertEqual([f["VulnerabilityID"] for f in findings], ["DS002"])
-
     def test_malformed_input_is_survivable(self):
         for raw in ("", "not json", "{}", '{"Results": null}'):
             with self.subTest(raw=raw):
                 self.assertEqual(parse_trivy_config_json(raw, "Dockerfile"), [])
+
+
+class TestTrivyConfigExecution(unittest.TestCase):
+    def test_scans_exact_dockerfile_path(self):
+        """Trivy must receive the Dockerfile path, not its parent directory."""
+
+        raw = _trivy_result([_misconfig("DS002", "HIGH", 7)], target="/repo/Dockerfile")
+
+        with patch("docksec.findings.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = raw
+            mock_run.return_value.stderr = ""
+            mock_run.return_value.returncode = 0
+
+            ok, findings, error = run_trivy_config("/repo/Dockerfile")
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["VulnerabilityID"], "DS002")
+
+        command = mock_run.call_args.args[0]
+
+        self.assertEqual(command, ["trivy", "config", "-f", "json", "--quiet", "--skip-version-check", "/repo/Dockerfile"])
+
+    def test_offline_mode_adds_skip_check_update(self):
+
+        with patch("docksec.findings.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = "{}"
+            mock_run.return_value.stderr = ""
+            mock_run.return_value.returncode = 0
+
+            run_trivy_config("/repo/Dockerfile", offline=True)
+
+        command = mock_run.call_args.args[0]
+
+        self.assertIn("--skip-check-update", command)
+        self.assertEqual(command[-1], "/repo/Dockerfile")
 
 
 class TestDeduplication(unittest.TestCase):
