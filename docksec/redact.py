@@ -65,6 +65,25 @@ _ENV_SPACE = re.compile(
     re.IGNORECASE,
 )
 
+# Secret-looking assignment nested INSIDE a larger value, after a compound
+# delimiter (?, &, ;, comma, or a quote). This is the same threat as URL
+# userinfo credentials, but in the query-string and connection-string forms:
+#   SPRING_DATASOURCE_URL=jdbc:postgresql://db/app?user=sa&password=<secret>
+#   ConnectionStrings__Default=Server=db;User Id=sa;Password=<secret>;
+# Here the outer key (SPRING_DATASOURCE_URL, ConnectionStrings__Default) is not
+# secret-looking, so the KEY=value passes above skip the whole field and the
+# embedded secret would otherwise leave the machine. The leading delimiter is
+# required so this never double-handles a top-level, space-delimited assignment
+# already covered above. Only the value is masked; the key stays visible.
+_EMBEDDED_SECRET_ASSIGN = re.compile(
+    r"(?P<pre>[?&;,\"']\s*)"
+    r"(?P<key>password|passwd|pwd|secret|token|api[_-]?key|apikey|"
+    r"access[_-]?key|private[_-]?key|credential|auth)"
+    r"(?P<sep>\s*[=:]\s*)"
+    r"(?P<val>[^&;,\s\"']+)",
+    re.IGNORECASE,
+)
+
 
 def _is_placeholder(value: str) -> bool:
     """Interpolations and empty values carry no secret material."""
@@ -123,6 +142,18 @@ def redact_content(content: str) -> Tuple[str, int]:
             return f"{match.group('prefix')}{REDACTED}{match.group('at')}"
 
         line = _URL_CREDENTIALS.sub(_sub_url, line)
+
+        # Secret assignments nested inside a compound value (query-string or
+        # connection-string fields whose outer key is not itself secret-looking).
+        def _sub_embedded(match: re.Match) -> str:
+            nonlocal count
+            val = match.group("val")
+            if val == REDACTED or _is_placeholder(val):
+                return match.group(0)
+            count += 1
+            return f"{match.group('pre')}{match.group('key')}{match.group('sep')}{REDACTED}"
+
+        line = _EMBEDDED_SECRET_ASSIGN.sub(_sub_embedded, line)
 
         # Value-shaped secrets (AWS keys, PATs, JWTs, ...) regardless of key name.
         for pattern in _SECRET_VALUE_PATTERNS:
