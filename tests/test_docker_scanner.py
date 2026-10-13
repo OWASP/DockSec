@@ -623,6 +623,64 @@ class TestDockerSecurityScanner(unittest.TestCase):
             score = scanner._calculate_local_score(results)
             self.assertEqual(score, 85.5)
 
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_generate_sbom_includes_vuln_scanner(self, mock_run):
+        """Regression test for #197: SBOM must include vulnerabilities."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        sbom = json.dumps({
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.7",
+            "components": [{"name": "openssl"}],
+            "vulnerabilities": [{"id": "CVE-2026-0001"}],
+        })
+        mock_run.return_value = Mock(returncode=0, stdout=sbom, stderr="")
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = "test:latest"
+        scanner.offline = False
+
+        result = scanner.generate_sbom()
+
+        self.assertEqual(result, sbom)
+        cmd = mock_run.call_args[0][0]
+        # --scanners and vuln must be an adjacent pair, not just present.
+        self.assertIn("--scanners", cmd)
+        self.assertEqual(cmd[cmd.index("--scanners") + 1], "vuln")
+        # Format and image targeting are unchanged.
+        self.assertIn("cyclonedx", cmd)
+        self.assertEqual(cmd[-1], "test:latest")
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_generate_sbom_offline_keeps_offline_flags(self, mock_run):
+        """Offline SBOM generation must keep --offline-scan and vuln scanner."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        sbom = json.dumps({"bomFormat": "CycloneDX", "components": []})
+        mock_run.return_value = Mock(returncode=0, stdout=sbom, stderr="")
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = "test:latest"
+        scanner.offline = True
+
+        result = scanner.generate_sbom()
+
+        self.assertEqual(result, sbom)
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--scanners", cmd)
+        self.assertEqual(cmd[cmd.index("--scanners") + 1], "vuln")
+        self.assertIn("--offline-scan", cmd)
+        self.assertIn("--skip-db-update", cmd)
+        self.assertEqual(cmd[-1], "test:latest")
+
+    def test_generate_sbom_no_image_returns_none(self):
+        """SBOM generation needs an image to inventory."""
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = None
+        self.assertIsNone(scanner.generate_sbom())
+
 
 if __name__ == '__main__':
     unittest.main()

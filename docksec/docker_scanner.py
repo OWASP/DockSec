@@ -868,8 +868,10 @@ class DockerSecurityScanner:
         if not self.image_name:
             return None
 
-        cmd = ['trivy', 'image', '--format', 'cyclonedx', '--no-progress',
-               '--skip-version-check', '--quiet']
+        # CycloneDX defaults to an inventory-only BOM; request vuln scanning
+        # explicitly so the SBOM also carries vulnerabilities.
+        cmd = ['trivy', 'image', '--format', 'cyclonedx', '--scanners', 'vuln',
+               '--no-progress', '--skip-version-check', '--quiet']
         if getattr(self, 'offline', False):
             cmd += ['--offline-scan', '--skip-db-update']
         cmd.append(self.image_name)
