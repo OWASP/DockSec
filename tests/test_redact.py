@@ -41,10 +41,35 @@ def test_redacts_compose_environment_styles():
 
 
 def test_leaves_interpolations_alone():
-    content = "ENV DB_PASSWORD=${DB_PASSWORD}\n"
+    content = (
+        "ENV DB_PASSWORD=${DB_PASSWORD}\n"
+        'ENV API_TOKEN="${API_TOKEN}"\n'
+        "ENV EMPTY_SECRET=\n"
+    )
     redacted, count = redact_content(content)
     assert count == 0
     assert redacted == content
+
+
+def test_redacts_interpolation_defaults_and_mixed_values():
+    content = (
+        "ENV DB_PASSWORD=${DB_PASSWORD:-hunter2}\n"
+        "ENV API_TOKEN=${API_TOKEN-fallback-token}\n"
+        "ENV AUTH_SECRET=${USER}:literal-secret\n"
+    )
+    redacted, count = redact_content(content)
+    assert count == 3
+    for secret in ("hunter2", "fallback-token", "literal-secret"):
+        assert secret not in redacted
+    assert redacted.count(REDACTED) == 3
+
+
+def test_redacts_command_substitution_for_secret_key():
+    content = "ENV DB_PASSWORD $(printf hardcoded-password)\n"
+    redacted, count = redact_content(content)
+    assert count == 1
+    assert "hardcoded-password" not in redacted
+    assert redacted == f"ENV DB_PASSWORD {REDACTED}\n"
 
 
 def test_redacts_value_shaped_secrets_regardless_of_key():
