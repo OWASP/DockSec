@@ -1,20 +1,37 @@
 FROM python:3.12-slim
 
-# Pinned tool versions. Unpinned installs make the image non-reproducible and
-# let an upstream release change scan results without a DockSec change.
-ARG TRIVY_VERSION=0.74.0
-ARG HADOLINT_VERSION=2.15.1
+# --- Build arguments ---
+ARG DOCKER_GID=999
+ARG DOCKER_UID=10001
+ARG DOCKER_USER_GID=10001
 
-# Install system dependencies
+# --- System dependencies ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git \
+        curl \
+        git \
+        ca-certificates \
+        gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Hadolint.
-# -f is required: without it curl exits 0 on an HTTP error and writes the error
-# page to the destination, producing a "successful" build with a text file where
-# the binary should be.
+# --- Docker CLI (GPG-signed APT repository) ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg \
+        -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+        https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/* \
+    && docker --version
+
+# --- Linter install (pinned) ---
+ARG HADOLINT_VERSION=2.15.1
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
@@ -26,9 +43,8 @@ RUN set -eux; \
         "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${hadolint_arch}"; \
     chmod +x /usr/local/bin/hadolint
 
-# Install Trivy from the release tarball rather than the install script, so the
-# download is version-addressed and a redirect or a moved script cannot silently
-# change what lands in the image.
+# --- Scanner install (pinned) ---
+ARG TRIVY_VERSION=0.74.0
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
@@ -41,32 +57,47 @@ RUN set -eux; \
     tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy; \
     rm -f /tmp/trivy.tar.gz
 
-# Fail the build if either tool is missing or not executable. The previous
-# install steps could fail silently, shipping an image whose every scan errored
-# with "Missing required tools: trivy".
-RUN trivy --version && hadolint --version
+# Fail the build if any tool is missing
+RUN trivy --version && hadolint --version && docker --version
 
-# Build and install from a dedicated directory. /github/workspace is where the
-# Action mounts the user's repository, so installing there both shipped the
-# DockSec source to every user and left files that a bind mount then shadowed.
+# --- Build and install DockSec ---
 WORKDIR /src
 COPY . .
-
-# Install DockSec with the AI extra: the image backs the GitHub Action, which
-# exposes AI analysis inputs, so a scan-only install would make those inputs fail.
 RUN pip install --no-cache-dir ".[ai]"
-
-# Fail the build if the CLI itself is not importable and runnable.
 RUN docksec --version
 
-# The Action mounts the repository being scanned here; it must start empty.
-# Leaving /src first so the build sources can be removed rather than left behind.
+# Prepare workspace and clean build sources
 WORKDIR /github/workspace
 RUN rm -rf /src
 
-# Copy and set permissions for entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# --- Non-root user ---
+RUN groupadd -g ${DOCKER_USER_GID} docksec && \
+    useradd -m -u ${DOCKER_UID} -g docksec -s /sbin/nologin -c "DockSec App User" docksec
 
-# Set entrypoint
+# --- Docker socket group (host GID match) ---
+RUN if getent group ${DOCKER_GID} >/dev/null; then \
+        existing=$(getent group ${DOCKER_GID} | cut -d: -f1); \
+        usermod -aG "$existing" docksec; \
+    else \
+        groupadd -g ${DOCKER_GID} docker_host && \
+        usermod -aG docker_host docksec; \
+    fi
+
+# --- DockSec results directory with correct ownership ---
+RUN mkdir -p /home/docksec/.docksec/results && \
+    chown -R docksec:docksec /home/docksec/.docksec
+
+# Bake HOME and DOCKSEC_RESULTS_DIR into the image so the non-root CLI
+# always resolves to a writable directory, regardless of how privileges
+# are dropped by the entrypoint. Users can still override with
+# `docker run -e DOCKSEC_RESULTS_DIR=...`.
+ENV HOME=/home/docksec \
+    DOCKSEC_RESULTS_DIR=/home/docksec/.docksec/results
+
+# --- Entrypoint ---
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    chown docksec:docksec /entrypoint.sh && \
+    chown -R docksec:docksec /github/workspace
+
 ENTRYPOINT ["/entrypoint.sh"]
