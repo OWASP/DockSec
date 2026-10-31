@@ -97,6 +97,31 @@ class TestTrivyConfigParsing(unittest.TestCase):
         findings = parse_trivy_config_json(payload, "Dockerfile", target_basename="Dockerfile")
         self.assertEqual([f["VulnerabilityID"] for f in findings], ["DS002"])
 
+    def test_nested_same_basename_results_are_filtered_out(self):
+        """A nested Dockerfile with the same basename must not be
+        mislabeled as the target file (issue #195)."""
+        payload = json.dumps({"Results": [
+            {"Target": "Dockerfile",
+             "Misconfigurations": [_misconfig("DS002", "HIGH", 15)]},
+            {"Target": "tests/e2e-kubernetes/scripts/eks-addon/Dockerfile",
+             "Misconfigurations": [_misconfig("DS013", "MEDIUM", 15)]},
+        ]})
+        findings = parse_trivy_config_json(
+            payload, "/repo/Dockerfile", target_basename="Dockerfile")
+        self.assertEqual([f["VulnerabilityID"] for f in findings], ["DS002"])
+        self.assertEqual(findings[0]["Target"], "/repo/Dockerfile")
+
+    def test_absolute_nested_target_is_filtered_out(self):
+        payload = json.dumps({"Results": [
+            {"Target": "/repo/Dockerfile",
+             "Misconfigurations": [_misconfig("DS002", "HIGH", 15)]},
+            {"Target": "/repo/tests/Dockerfile",
+             "Misconfigurations": [_misconfig("DS013", "MEDIUM", 15)]},
+        ]})
+        findings = parse_trivy_config_json(
+            payload, "/repo/Dockerfile", target_basename="Dockerfile")
+        self.assertEqual([f["VulnerabilityID"] for f in findings], ["DS002"])
+
     def test_malformed_input_is_survivable(self):
         for raw in ("", "not json", "{}", '{"Results": null}'):
             with self.subTest(raw=raw):

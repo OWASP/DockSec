@@ -165,8 +165,13 @@ def parse_trivy_config_json(
     """Convert ``trivy config -f json`` output into structured findings.
 
     ``trivy config`` scans a directory, so its output can include other config
-    files that happen to sit beside the Dockerfile. ``target_basename`` limits
-    the results to the file actually being scanned.
+    files that happen to sit beside the Dockerfile -- including a nested file
+    with the same basename (e.g. ``tests/.../Dockerfile``). Results are
+    therefore matched by full path against ``target`` (a relative Trivy
+    target is resolved against the target's directory), not by basename
+    alone, so a nested file's findings can no longer be mislabeled as
+    belonging to the file being scanned. ``target_basename`` is retained
+    for callers that still pass it.
     """
     if not raw or not raw.strip():
         return []
@@ -177,11 +182,18 @@ def parse_trivy_config_json(
         logger.warning(f"Could not parse Trivy config JSON output: {exc}")
         return []
 
+    target_abs = os.path.abspath(target)
+    target_dir = os.path.dirname(target_abs)
     findings = []
     for result in (payload or {}).get("Results") or []:
-        if target_basename:
-            result_target = str(result.get("Target") or "")
-            if os.path.basename(result_target) != target_basename:
+        result_target = str(result.get("Target") or "")
+        if result_target:
+            candidate = (
+                result_target
+                if os.path.isabs(result_target)
+                else os.path.join(target_dir, result_target)
+            )
+            if os.path.abspath(candidate) != target_abs:
                 continue
         for misconfig in result.get("Misconfigurations") or []:
             rule_id = normalize_rule_id(
