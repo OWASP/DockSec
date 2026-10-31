@@ -627,3 +627,29 @@ class TestDockerSecurityScanner(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
+
+class TestGenerateSbom(unittest.TestCase):
+    """Tests for DockerSecurityScanner.generate_sbom (issue #197)."""
+
+    def _scanner(self, image_name="test:latest"):
+        from docksec.docker_scanner import DockerSecurityScanner
+
+        scanner = DockerSecurityScanner.__new__(DockerSecurityScanner)
+        scanner.image_name = image_name
+        scanner.offline = False
+        return scanner
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_sbom_command_enables_vuln_scanner(self, mock_run):
+        mock_run.return_value = Mock(
+            returncode=0, stdout='{"bomFormat": "CycloneDX"}', stderr="")
+        scanner = self._scanner()
+        self.assertEqual(scanner.generate_sbom(), '{"bomFormat": "CycloneDX"}')
+        cmd = mock_run.call_args[0][0]
+        self.assertIn('--scanners', cmd)
+        self.assertEqual(cmd[cmd.index('--scanners') + 1], 'vuln')
+
+    @patch('docksec.docker_scanner.subprocess.run')
+    def test_sbom_returns_none_without_image(self, mock_run):
+        self.assertIsNone(self._scanner(image_name=None).generate_sbom())
+        mock_run.assert_not_called()

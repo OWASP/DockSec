@@ -868,8 +868,13 @@ class DockerSecurityScanner:
         if not self.image_name:
             return None
 
-        cmd = ['trivy', 'image', '--format', 'cyclonedx', '--no-progress',
-               '--skip-version-check', '--quiet']
+        # '--format cyclonedx' disables security scanning by default, so an
+        # SBOM generated without '--scanners vuln' lists components but no
+        # vulnerabilities, even when the scan report has them (issue #197).
+        # Enable vulnerability scanning explicitly so the SBOM carries the
+        # vulnerabilities the report already lists.
+        cmd = ['trivy', 'image', '--format', 'cyclonedx', '--scanners', 'vuln',
+               '--no-progress', '--skip-version-check', '--quiet']
         if getattr(self, 'offline', False):
             cmd += ['--offline-scan', '--skip-db-update']
         cmd.append(self.image_name)
