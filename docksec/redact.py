@@ -66,10 +66,18 @@ _ENV_SPACE = re.compile(
 )
 
 
+# Only a complete variable reference carries no secret material. Values
+# that merely start with an interpolation -- Compose defaults such as
+# ${VAR:-default}, mixed values such as ${VAR}suffix, or command
+# substitutions such as $(...) -- can contain literal secret material
+# after the interpolation, so they must still be redacted.
+_PURE_PLACEHOLDER = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+
+
 def _is_placeholder(value: str) -> bool:
     """Interpolations and empty values carry no secret material."""
     stripped = value.strip().strip("\"'")
-    return not stripped or stripped.startswith("${") or stripped.startswith("$(")
+    return not stripped or _PURE_PLACEHOLDER.fullmatch(stripped) is not None
 
 
 def redact_content(content: str) -> Tuple[str, int]:
