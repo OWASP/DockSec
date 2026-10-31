@@ -96,3 +96,32 @@ def test_no_secrets_no_change():
     redacted, count = redact_content(content)
     assert count == 0
     assert redacted == content
+
+
+def test_redacts_compose_default_value():
+    content = "ENV DB_PASSWORD=${DB_PASSWORD:-fallback111}\n"
+    redacted, count = redact_content(content)
+    assert count == 1
+    assert "fallback111" not in redacted
+
+
+def test_redacts_mixed_interpolation_and_literal():
+    content = "ENV DB_PASSWORD=${DB_PASSWORD}suffix111\nENV OTHER_TOKEN=pre222${OTHER_TOKEN}\n"
+    redacted, count = redact_content(content)
+    assert count == 2
+    assert "suffix111" not in redacted
+    assert "pre222" not in redacted
+
+
+def test_leaves_quoted_placeholder_alone():
+    content = 'ENV DB_PASSWORD="${DB_PASSWORD}"\n'
+    redacted, count = redact_content(content)
+    assert count == 0
+    assert redacted == content
+
+
+def test_redacts_command_substitution():
+    content = "ENV DB_PASSWORD=$(cat /run/secrets/db)\n"
+    redacted, count = redact_content(content)
+    assert count == 1
+    assert "cat /run/secrets/db" not in redacted
